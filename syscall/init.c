@@ -67,7 +67,7 @@ static __init void init(void)
 
 	pr_debug("Start init\n");
 
-	ci = alloc_client(FSTYPE);
+	ci = init_client(FSTYPE);
 	if (ci == NULL) {
 		pr_error("Failed to create cfs client\n");
 		goto out;
@@ -106,7 +106,7 @@ static __init void init(void)
 		free(open_fd);
 	}
 
-	ret = register_client(ci);
+	ret = set_client_flag(ci, CI_FLAG_READY);
 	if (ret < 0) {
 		pr_error("Failed to register client: %s\n", strerror(ret));
 		goto cleanup_fd_map_out;
@@ -126,5 +126,5 @@ out:
 static __exit void cleanup(void)
 {
 	pr_debug("Start cleanup all clients\n");
-	destroy_all_clients();
+	destroy_client();
 }

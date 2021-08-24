@@ -8,9 +8,8 @@
 #include "list.h"
 #include "log.h"
 
-LIST_HEAD(client_list);
-pthread_rwlock_t client_list_lock;
-int64_t client_id = 1;
+/* only has one client for tasks */
+struct client_info client = {0};
 
 struct mountpoint {
 	struct list_head mountpoint_link;
@@ -53,83 +52,56 @@ static void destroy_mountpoints_nolock(struct client_info *ci)
 	}
 }
 
-struct client_info *alloc_client(const char *fstype)
+struct client_info *init_client(const char *fstype)
 {
-	struct client_info *ci;
 	size_t len = strlen(fstype) + 1;
 	int err;
 
-	ci = malloc(sizeof(struct client_info) + len);
-	if (ci == NULL)
+	client.fstype = malloc(len);
+	if (client.fstype == NULL)
 		return NULL;
 
-	ci->cid = 0;
-	ci->flags = 0;
-	ci->fd_map_set_nr = 0;
-	ci->total_free_fd_nr = 0;
-	memcpy(ci->fstype, fstype, len);
+	client.flags = 0;
+	client.fd_map_set_nr = 0;
+	client.total_free_fd_nr = 0;
+	memcpy(client.fstype, fstype, len);
 
-	err = pthread_rwlock_init(&ci->rwlock, NULL);
+	err = pthread_rwlock_init(&client.rwlock, NULL);
 	if (err != 0) {
-		goto free_out;
+		free(client.fstype);
+		client.fstype = NULL;
+		return NULL;
 	}
 
-	INIT_LIST_HEAD(&ci->fd_map_set_list);
-	INIT_LIST_HEAD(&ci->mountpoint_list);
-	INIT_LIST_HEAD(&ci->client_link);
+	INIT_LIST_HEAD(&client.fd_map_set_list);
+	INIT_LIST_HEAD(&client.mountpoint_list);
+	INIT_LIST_HEAD(&client.client_link);
 
-	return ci;
-
-free_out:
-	free(ci);
-	return NULL;
+	return &client;
 }
 
-void destroy_client(struct client_info *ci)
+struct client_info *get_client(void)
 {
-	if (ci == NULL)
-		return;
+	return &client;
+}
 
-	/*
-	 * It's safe to call list_del multiple times. destroy_client() could
-	 * be called alone, so we should keep list_del here.
-	 */
-	pthread_rwlock_wrlock(&client_list_lock);
-	list_del_init(&ci->client_link);
-	pthread_rwlock_unlock(&client_list_lock);
+void destroy_client(void)
+{
+	pthread_rwlock_wrlock(&client.rwlock);
+	destroy_fd_map_set_nolock(&client);
+	destroy_mountpoints_nolock(&client);
+	free(client.fstype);
+	client.fstype = NULL;
+	pthread_rwlock_unlock(&client.rwlock);
 
+	pr_debug("Free client\n");
+}
+
+int set_client_flag(struct client_info *ci, unsigned int flag)
+{
 	pthread_rwlock_wrlock(&ci->rwlock);
-	destroy_fd_map_set_nolock(ci);
-	destroy_mountpoints_nolock(ci);
+	ci->flags |= flag;
 	pthread_rwlock_unlock(&ci->rwlock);
 
-	pr_debug("Free client %ld\n", (long)ci->cid);
-	free(ci);
-}
-
-void destroy_all_clients(void)
-{
-	struct client_info *ci, *next;
-
-	pthread_rwlock_wrlock(&client_list_lock);
-	while (!list_empty(&client_list)) {
-		ci = list_first_entry(&client_list, struct client_info, client_link);
-		list_del_init(&ci->client_link);
-		pthread_rwlock_unlock(&client_list_lock);
-
-		destroy_client(ci);
-
-		pthread_rwlock_wrlock(&client_list_lock);
-	}
-	pthread_rwlock_unlock(&client_list_lock);
-}
-
-int register_client(struct client_info *ci)
-{
-	pthread_rwlock_wrlock(&client_list_lock);
-	ci->cid = client_id++;
-	list_add_tail(&ci->client_link, &client_list);
-	pthread_rwlock_unlock(&client_list_lock);
-
-	pr_debug("Register client %ld\n", (long)ci->cid);
+	pr_debug("Set client flags %#x\n", ci->flags);
 }
