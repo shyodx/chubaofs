@@ -1,6 +1,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <errno.h>
 
 #include "client.h"
@@ -61,7 +62,7 @@ static void destroy_mountpoints_nolock(struct client_info *ci)
 	}
 }
 
-struct client_info *alloc_client(const char *fstype)
+struct client_info *alloc_client(const char *fstype, pid_t pid)
 {
 	struct client_info *ci;
 	size_t len = strlen(fstype) + 1;
@@ -72,9 +73,11 @@ struct client_info *alloc_client(const char *fstype)
 		return NULL;
 
 	ci->cid = 0;
+	ci->pid = pid;
 	ci->flags = 0;
 	ci->fd_map_set_nr = 0;
 	ci->total_free_fd_nr = 0;
+	atomic_init(&ci->refcnt, 1);
 	memcpy(ci->fstype, fstype, len);
 
 	err = pthread_rwlock_init(&ci->rwlock, NULL);
@@ -91,6 +94,30 @@ struct client_info *alloc_client(const char *fstype)
 free_out:
 	free(ci);
 	return NULL;
+}
+
+struct client_info *get_client(pid_t pid)
+{
+	struct client_info *ci;
+
+	pthread_rwlock_rdlock(&client_list_lock);
+	list_for_each_entry(ci, &client_list, client_link) {
+		if (ci->pid != pid)
+			continue;
+
+		atomic_fetch_add(&ci->refcnt, 1);
+	}
+	pthread_rwlock_unlock(&client_list_lock);
+
+	return ci;
+}
+
+struct client_info *put_client(struct client_info *ci)
+{
+	int refcnt;
+
+	refcnt = atomic_fetch_sub(&ci->refcnt, 1);
+	/* how to deal with refcnt that decreases to 0 */
 }
 
 void destroy_client(struct client_info *ci)

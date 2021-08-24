@@ -62,12 +62,13 @@ static __init void init(void)
 {
 	struct client_info *ci;
 	struct open_fd *open_fd, *next;
+	pid_t pid = getpid();
 	LIST_HEAD(open_fd_list);
 	int ret;
 
-	pr_debug("Start init\n");
+	pr_debug("Start init for pid %d\n", pid);
 
-	ci = alloc_client(FSTYPE);
+	ci = alloc_client(FSTYPE, pid);
 	if (ci == NULL) {
 		pr_error("Failed to create cfs client\n");
 		goto out;

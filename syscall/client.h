@@ -2,6 +2,7 @@
 #define _CFS_SYSCALL_CLIENT_H
 
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include "list.h"
 
@@ -12,7 +13,9 @@ extern struct list_head client_list;
 
 struct client_info {
 	pthread_rwlock_t rwlock;
+	pid_t pid;
 	int64_t cid;
+	atomic_int refcnt;
 	unsigned int flags;
 	unsigned int fd_map_set_nr;
 	unsigned int total_free_fd_nr;
@@ -23,7 +26,7 @@ struct client_info {
 	char fstype[0]; /* KEEP IT AS THE LAST ELEMENT */
 };
 
-struct client_info *alloc_client(const char *fstype);
+struct client_info *alloc_client(const char *fstype, pid_t pid);
 void destroy_client(struct client_info *ci);
 void destroy_all_clients(void);
 int register_client(struct client_info *ci);
