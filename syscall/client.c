@@ -12,7 +12,15 @@ LIST_HEAD(client_list);
 pthread_rwlock_t client_list_lock;
 int64_t client_id = 1;
 
+struct cfs_config {
+};
+
+/* Each mountpoint could have one cfs_client */
+/* FIXME: we should provide an ioctl to get server info, so that we could
+ * create an cfs client and config libsdk */
 struct mountpoint {
+	int64_t cid;
+	struct cfs_config config;
 	struct list_head mountpoint_link;
 	char mnt_dir[0];
 };
