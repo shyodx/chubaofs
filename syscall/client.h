@@ -33,6 +33,7 @@ void destroy_client(struct client_info *ci);
 void destroy_all_clients(void);
 int register_client(struct client_info *ci);
 int append_mountpoint(struct client_info *ci, const char *mnt_fsname, const char *mnt_dir);
+int64_t get_mountpoint_cid(struct client_info *ci, const char *path);
 struct client_info *get_client(pid_t pid);
 void put_client(struct client_info *ci);
 

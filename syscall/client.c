@@ -283,3 +283,27 @@ int register_client(struct client_info *ci)
 
 	pr_debug("Register client %"PRId64"\n", ci->id);
 }
+
+int64_t get_mountpoint_cid(struct client_info *ci, const char *path)
+{
+	struct mountpoint *mnt;
+	size_t path_len = strlen(path);
+	size_t mnt_len;
+	int64_t cid = -1;
+
+	pthread_rwlock_rdlock(&ci->rwlock);
+	list_for_each_entry(mnt, &ci->mountpoint_list, mountpoint_link) {
+		mnt_len = strlen(mnt->mnt_dir);
+		/* if we are accessing the root of cfs, mnt_len == path_len */
+		if (mnt_len > strlen(path))
+			continue;
+		if (!memcmp(mnt->mnt_dir, path, mnt_len) &&
+		    (path[mnt_len] == '\0' || path[mnt_len] == '/')) {
+			cid = mnt->cid;
+			break;
+		}
+	}
+	pthread_rwlock_unlock(&ci->rwlock);
+
+	return cid;
+}
