@@ -6,14 +6,14 @@
 #include <dirent.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <inttypes.h>
 #include <errno.h>
 
+#include "common.h"
 #include "fd_map.h"
 #include "log.h"
 
 #define FILE_PATH_LEN 128
-#define dot "."
-#define dotdot ".."
 
 static struct fd_map_set *do_append_fd_map_set(struct client_info *ci)
 {
