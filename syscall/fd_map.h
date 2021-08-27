@@ -11,7 +11,7 @@
 
 struct fd_map {
 	int real_fd;
-	bool is_cfs_fd;
+	int64_t cid;
 };
 
 struct fd_map_set {
@@ -26,8 +26,11 @@ struct open_fd {
 	struct list_head link;
 };
 
+#define IS_CFS_FD(map) ((map)->cid >= 0)
+
 int append_fd_map_set(struct client_info *ci);
-int map_fd(struct client_info *ci, int real_fd, int expected_fd, bool is_cfs_fd);
+int map_fd(struct client_info *ci, int real_fd, int expected_fd, int64_t cid);
+int unmap_fd(struct client_info *ci, int fd, struct fd_map *map);
 int get_opened_fd(struct client_info *ci, struct list_head *head);
 void destroy_fd_map_set_nolock(struct client_info *ci);
 

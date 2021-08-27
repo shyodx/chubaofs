@@ -125,7 +125,8 @@ int get_opened_fd(struct client_info *ci, struct list_head *head)
 	return ret;
 }
 
-int map_fd(struct client_info *ci, int real_fd, int expected_fd, bool is_cfs_fd)
+/* If cid is less than 0, it means real_fd is not in cfs */
+int map_fd(struct client_info *ci, int real_fd, int expected_fd, int64_t cid)
 {
 	struct fd_map_set *fds;
 	bool found = false;
@@ -150,7 +151,7 @@ int map_fd(struct client_info *ci, int real_fd, int expected_fd, bool is_cfs_fd)
 			}
 
 			fds->fd_maps[0].real_fd = real_fd;
-			fds->fd_maps[0].is_cfs_fd = is_cfs_fd;
+			fds->fd_maps[0].cid = cid;
 			ret = fds->start_fd;
 		} else {
 			for (int i = 0; i < FD_PER_SET; i++) {
@@ -173,7 +174,7 @@ int map_fd(struct client_info *ci, int real_fd, int expected_fd, bool is_cfs_fd)
 			}
 
 			fds->fd_maps[offs].real_fd = real_fd;
-			fds->fd_maps[offs].is_cfs_fd = is_cfs_fd;
+			fds->fd_maps[offs].cid = cid;
 			ret = expected_fd;
 
 			break;
@@ -181,17 +182,19 @@ int map_fd(struct client_info *ci, int real_fd, int expected_fd, bool is_cfs_fd)
 	}
 
 	if (ret >= 0)
-		pr_debug("map fd %d for real_fd %d expected_fd %d is_cfs_fd %d from fds %d\n",
-			 ret, real_fd, expected_fd, is_cfs_fd, fds->start_fd);
+		pr_debug("map fd %d for real_fd %d expected_fd %d cid %"PRId64" from fds %d\n",
+			 ret, real_fd, expected_fd, cid, fds->start_fd);
 
 	pthread_rwlock_unlock(&ci->rwlock);
 
 	return ret;
 }
 
-void unmap_fd(struct client_info *ci, int fd)
+/* Return the real_fd of fd */
+int unmap_fd(struct client_info *ci, int fd, struct fd_map *map)
 {
 	struct fd_map_set *fds;
+	int real_fd;
 
 	pthread_rwlock_wrlock(&ci->rwlock);
 	list_for_each_entry(fds, &ci->fd_map_set_list, fds_link) {
@@ -201,17 +204,26 @@ void unmap_fd(struct client_info *ci, int fd)
 		int offs = fd - fds->start_fd;
 		if (fds->fd_maps[offs].real_fd == -1) {
 			pr_debug("fd %d is not alloced\n", fd);
-			return;
+			return -EBADF;
 		}
 
-		pr_debug("free fd %d for real_fd %d is_cfs_fd %d from fds %d\n",
+		pr_debug("free fd %d for real_fd %d cid %"PRId64" from fds %d\n",
 			 fd, fds->fd_maps[offs].real_fd, fd,
-			 fds->fd_maps[offs].is_cfs_fd, fds->start_fd);
+			 fds->fd_maps[offs].cid, fds->start_fd);
+		if (map != NULL) {
+			map->real_fd = fds->fd_maps[offs].real_fd;
+			map->cid = fds->fd_maps[offs].cid;
+		}
 		fds->fd_maps[offs].real_fd = -1;
-		fds->fd_maps[offs].is_cfs_fd = false;
+		fds->fd_maps[offs].cid = -1;
+		fds->free_nr++;
+
+		ci->total_free_fd_nr++;
 
 		break;
 	}
 
 	pthread_rwlock_unlock(&ci->rwlock);
+
+	return 0;
 }
