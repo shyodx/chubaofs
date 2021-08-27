@@ -14,5 +14,12 @@ $(target): $(OBJ)
 $(OBJ): $(SRC)
 	$(CC) $(CFLAGS) -c $^ $(LDFLAGS)
 
+TEST := test/test
+
+$(TEST): test/test.c
+	gcc -o $@ $^
+
+all: $(target) $(TEST)
+
 clean:
 	rm $(OBJ)
