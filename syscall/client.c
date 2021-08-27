@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdatomic.h>
+#include <assert.h>
 #include <inttypes.h>
 #include <errno.h>
 
@@ -155,6 +156,7 @@ free_out:
 struct client_info *get_client(pid_t pid)
 {
 	struct client_info *ci;
+	bool found = false;
 
 	pthread_rwlock_rdlock(&client_list_lock);
 	list_for_each_entry(ci, &client_list, client_link) {
@@ -162,15 +164,25 @@ struct client_info *get_client(pid_t pid)
 			continue;
 
 		atomic_fetch_add(&ci->refcnt, 1);
+		found = true;
+		break;
 	}
 	pthread_rwlock_unlock(&client_list_lock);
+
+	if (!found) {
+		pr_error("pid %d is not in client list!\n", pid);
+		assert(false);
+	}
 
 	return ci;
 }
 
-struct client_info *put_client(struct client_info *ci)
+void put_client(struct client_info *ci)
 {
 	int refcnt;
+
+	if (ci == NULL)
+		return;
 
 	refcnt = atomic_fetch_sub(&ci->refcnt, 1);
 	/* how to deal with refcnt that decreases to 0 */
