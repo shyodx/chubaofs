@@ -2,7 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <mntent.h>
+#include <unistd.h>
 #include <errno.h>
+
+#include <sys/types.h>
 
 #include "client.h"
 #include "fd_map.h"
@@ -41,7 +44,7 @@ static int get_cfs_mount_info(struct client_info *ci)
 			continue;
 
 		/* found cfs mount point */
-		ret = append_mountpoint(ci, mnt->mnt_dir);
+		ret = append_mountpoint(ci, mnt->mnt_fsname, mnt->mnt_dir);
 		if (ret != 0) {
 			goto out;
 		}

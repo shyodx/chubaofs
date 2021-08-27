@@ -3,8 +3,10 @@ target := libcfsdirect.so
 SRC := $(wildcard *.c)
 OBJ := $(patsubst %.c,%.o, $(SRC))
 
-CFLAGS += -fPIC -g
-LDFLAGS += -pthread
+LIBCFSDIR := /home/shengyong/go/src/github.com/chubaofs/chubaofs/build/bin
+
+CFLAGS += -fPIC -g -I$(LIBCFSDIR)
+LDFLAGS += -pthread -L$(LIBCFSDIR) -lcfs
 
 $(target): $(OBJ)
 	$(CC) $(CFLAGS) -shared -o $@ $^ $(LDFLAGS)

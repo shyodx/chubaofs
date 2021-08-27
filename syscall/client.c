@@ -5,6 +5,8 @@
 #include <inttypes.h>
 #include <errno.h>
 
+#include "libcfs.h"
+
 #include "client.h"
 #include "fd_map.h"
 #include "list.h"
@@ -15,6 +17,11 @@ pthread_rwlock_t client_list_lock;
 int64_t client_id = 1;
 
 struct cfs_config {
+	char *master_addr;
+	char *volname;
+	char *log_dir;
+	char *log_level;
+	char *follower_read;
 };
 
 /* Each mountpoint could have one cfs_client */
@@ -27,23 +34,65 @@ struct mountpoint {
 	char mnt_dir[0];
 };
 
-int append_mountpoint(struct client_info *ci, const char *mnt_dir)
+/* FIXME: could get cfs_config info from env */
+static int init_cfs_config(struct mountpoint *mnt, const char *volname)
 {
-	struct mountpoint *mp;
+	mnt->config.master_addr = strdup("192.168.0.11:17010,192.168.0.12:17010,192.168.0.13:17010");
+	mnt->config.volname = (char *)volname;
+	mnt->config.log_dir = strdup("/tmp/cfs");
+	mnt->config.log_level = strdup("debug");
+	mnt->config.follower_read = strdup("true");
+
+	pr_debug("init cfs_config:\n\tmasterAddr: %s\n\tvolName: %s\n\t"
+		 "logDir: %s\n\tlogLevel: %s\n\tfollowerRead: %s\n",
+		 mnt->config.master_addr, mnt->config.volname,
+		 mnt->config.log_dir, mnt->config.log_level,
+		 mnt->config.follower_read);
+
+	return 0;
+}
+
+/* FIXME: only for linux */
+int append_mountpoint(struct client_info *ci, const char *mnt_fsname, const char *mnt_dir)
+{
+	struct mountpoint *mnt;
+	char *volname;
 	size_t len;
 	int err;
 
+	/* init mountpoint's mnt_dir */
 	len = strlen(mnt_dir) + 1;
-	mp = malloc(sizeof(struct mountpoint) + len);
-	if (mp == NULL) {
+	mnt = malloc(sizeof(struct mountpoint) + len);
+	if (mnt == NULL) {
 		return -ENOMEM;
 	}
 
-	INIT_LIST_HEAD(&mp->mountpoint_link);
-	memcpy(mp->mnt_dir, mnt_dir, len);
+	INIT_LIST_HEAD(&mnt->mountpoint_link);
+	memcpy(mnt->mnt_dir, mnt_dir, len);
 
+	/* get volume name from mnt_fsname */
+	if (strlen(mnt_fsname) < strlen("chubaofs-")) {
+		free(mnt);
+		pr_error("Invalid fsname '%s'\n", mnt_fsname);
+		return -EINVAL;
+	}
+	volname = strdup(mnt_fsname + strlen("chubaofs-"));
+	if (volname == NULL) {
+		free(mnt);
+		return -ENOMEM;
+	}
+
+	/* get volnume info and init cfs_config */
+	err = init_cfs_config(mnt, volname);
+	if (err < 0) {
+		free(volname);
+		free(mnt);
+		return err;
+	}
+
+	/* insert mountpoint to client's mountpoint_list */
 	pthread_rwlock_wrlock(&ci->rwlock);
-	list_add(&mp->mountpoint_link, &ci->mountpoint_list);
+	list_add(&mnt->mountpoint_link, &ci->mountpoint_list);
 	pthread_rwlock_unlock(&ci->rwlock);
 
 	return 0;
@@ -57,8 +106,14 @@ static void destroy_mountpoints_nolock(struct client_info *ci)
 		return;
 
 	list_for_each_entry_safe(mnt, next, &ci->mountpoint_list, mountpoint_link) {
-		pr_debug("free mountpoint %s\n", mnt->mnt_dir);
+		pr_debug("free mountpoint %s client %"PRId64"\n", mnt->mnt_dir, mnt->cid);
 		list_del(&mnt->mountpoint_link);
+		cfs_close_client(mnt->cid);
+		free(mnt->config.master_addr);
+		free(mnt->config.volname);
+		free(mnt->config.log_dir);
+		free(mnt->config.log_level);
+		free(mnt->config.follower_read);
 		free(mnt);
 	}
 }
@@ -162,6 +217,51 @@ void destroy_all_clients(void)
 
 int register_client(struct client_info *ci)
 {
+	struct mountpoint *mnt;
+	int err;
+
+	pthread_rwlock_wrlock(&ci->rwlock);
+	list_for_each_entry(mnt, &ci->mountpoint_list, mountpoint_link) {
+		mnt->cid = cfs_new_client(); // never fail
+		err = cfs_set_client(mnt->cid, "volName", mnt->config.volname);
+		if (err < 0) {
+			pr_error("Failed to set volName '%s' for client %"PRId64"\n",
+				 mnt->config.volname, mnt->cid);
+			break;
+		}
+		err = cfs_set_client(mnt->cid, "masterAddr", mnt->config.master_addr);
+		if (err < 0) {
+			pr_error("Failed to set masterAddr '%s' for client %"PRId64"\n",
+				 mnt->config.master_addr, mnt->cid);
+			break;
+		}
+		err = cfs_set_client(mnt->cid, "followerRead", mnt->config.follower_read);
+		if (err < 0) {
+			pr_error("Failed to set followerRead %s for client %"PRId64"\n",
+				 mnt->config.follower_read, mnt->cid);
+			break;
+		}
+		err = cfs_set_client(mnt->cid, "logDir", mnt->config.log_dir);
+		if (err < 0) {
+			pr_error("Failed to set logDir '%s' for client %"PRId64"\n",
+				 mnt->config.log_dir, mnt->cid);
+			break;
+		}
+		err = cfs_set_client(mnt->cid, "logLevel", mnt->config.log_level);
+		if (err < 0) {
+			pr_error("Failed to set logLevel '%s' for client %"PRId64"\n",
+				 mnt->config.log_level, mnt->cid);
+			break;
+		}
+
+		err = cfs_start_client(mnt->cid);
+		if (err < 0) {
+			pr_error("Failed to start client %"PRId64": %s\n", mnt->cid, strerror(err));
+			break;
+		}
+	}
+	pthread_rwlock_unlock(&ci->rwlock);
+
 	pthread_rwlock_wrlock(&client_list_lock);
 	ci->id = client_id++;
 	list_add_tail(&ci->client_link, &client_list);

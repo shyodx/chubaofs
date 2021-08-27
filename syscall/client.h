@@ -4,6 +4,8 @@
 #include <pthread.h>
 #include <stdatomic.h>
 
+#include <sys/types.h>
+
 #include "list.h"
 
 extern struct list_head client_list;
@@ -30,6 +32,6 @@ struct client_info *alloc_client(const char *fstype, pid_t pid);
 void destroy_client(struct client_info *ci);
 void destroy_all_clients(void);
 int register_client(struct client_info *ci);
-int append_mountpoint(struct client_info *ci, const char *mnt_dir);
+int append_mountpoint(struct client_info *ci, const char *mnt_fsname, const char *mnt_dir);
 
 #endif
