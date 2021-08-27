@@ -96,6 +96,8 @@ int append_mountpoint(struct client_info *ci, const char *mnt_fsname, const char
 	list_add(&mnt->mountpoint_link, &ci->mountpoint_list);
 	pthread_rwlock_unlock(&ci->rwlock);
 
+	pr_debug("Add cfs mountpoint volume '%s' mnt_dir '%s'\n", volname, mnt_dir);
+
 	return 0;
 }
 
