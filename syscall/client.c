@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdatomic.h>
+#include <inttypes.h>
 #include <errno.h>
 
 #include "client.h"
@@ -72,7 +73,7 @@ struct client_info *alloc_client(const char *fstype, pid_t pid)
 	if (ci == NULL)
 		return NULL;
 
-	ci->cid = 0;
+	ci->id = 0;
 	ci->pid = pid;
 	ci->flags = 0;
 	ci->fd_map_set_nr = 0;
@@ -138,7 +139,7 @@ void destroy_client(struct client_info *ci)
 	destroy_mountpoints_nolock(ci);
 	pthread_rwlock_unlock(&ci->rwlock);
 
-	pr_debug("Free client %ld\n", (long)ci->cid);
+	pr_debug("Free client %"PRId64"\n", ci->id);
 	free(ci);
 }
 
@@ -162,9 +163,9 @@ void destroy_all_clients(void)
 int register_client(struct client_info *ci)
 {
 	pthread_rwlock_wrlock(&client_list_lock);
-	ci->cid = client_id++;
+	ci->id = client_id++;
 	list_add_tail(&ci->client_link, &client_list);
 	pthread_rwlock_unlock(&client_list_lock);
 
-	pr_debug("Register client %ld\n", (long)ci->cid);
+	pr_debug("Register client %"PRId64"\n", ci->id);
 }

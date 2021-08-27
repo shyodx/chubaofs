@@ -14,7 +14,7 @@ extern struct list_head client_list;
 struct client_info {
 	pthread_rwlock_t rwlock;
 	pid_t pid;
-	int64_t cid;
+	int64_t id;
 	atomic_int refcnt;
 	unsigned int flags;
 	unsigned int fd_map_set_nr;
