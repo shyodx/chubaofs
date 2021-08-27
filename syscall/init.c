@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+#include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +11,7 @@
 
 #include "client.h"
 #include "fd_map.h"
+#include "apis.h"
 #include "list.h"
 #include "log.h"
 
@@ -16,6 +19,38 @@
 #define __exit __attribute__((destructor))
 
 #define FSTYPE "fuse.chubaofs"
+
+/*
+const char *api_names[] = {
+	"open",
+	"close",
+	NULL
+};
+*/
+
+struct orig_apis orig_apis = {NULL};
+
+static int init_orig_apis(void)
+{
+	//const char *api = api_names;
+	int err;
+
+	orig_apis.open = dlsym(RTLD_NEXT, "open");
+	if (orig_apis.open == NULL) {
+		err = -errno;
+		pr_error("Failed to get orignal %s function: %s\n", "open", strerror(errno));
+		return err;
+	}
+
+	orig_apis.close = dlsym(RTLD_NEXT, "close");
+	if (orig_apis.close == NULL) {
+		err = -errno;
+		pr_error("Failed to get orignal %s function: %s\n", "close", strerror(errno));
+		return err;
+	}
+
+	return 0;
+}
 
 static int get_cfs_mount_info(struct client_info *ci)
 {
@@ -38,8 +73,8 @@ static int get_cfs_mount_info(struct client_info *ci)
 		if (mnt == NULL)
 			break;
 
-		pr_debug("fsname[%s] mnt_dir[%s] type[%s] opts[%s]\n",
-			 mnt->mnt_fsname, mnt->mnt_dir, mnt->mnt_type, mnt->mnt_opts);
+	//	pr_debug("fsname[%s] mnt_dir[%s] type[%s] opts[%s]\n",
+	//		 mnt->mnt_fsname, mnt->mnt_dir, mnt->mnt_type, mnt->mnt_opts);
 		if (strcmp(mnt->mnt_type, ci->fstype))
 			continue;
 
@@ -70,6 +105,10 @@ static __init void init(void)
 	int ret;
 
 	pr_debug("Start init for pid %d\n", pid);
+
+	ret = init_orig_apis();
+	if (ret < 0)
+		goto out;
 
 	ci = alloc_client(FSTYPE, pid);
 	if (ci == NULL) {
