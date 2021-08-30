@@ -49,6 +49,13 @@ static int init_orig_apis(void)
 		return err;
 	}
 
+	orig_apis.read = dlsym(RTLD_NEXT, "read");
+	if (orig_apis.read == NULL) {
+		err = -errno;
+		pr_error("Failed to get orignal %s function: %s\n", "read", strerror(errno));
+		return err;
+	}
+
 	return 0;
 }
 
