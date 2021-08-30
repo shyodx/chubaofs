@@ -194,7 +194,6 @@ int map_fd(struct client_info *ci, int real_fd, int expected_fd, int64_t cid)
 int unmap_fd(struct client_info *ci, int fd, struct fd_map *map)
 {
 	struct fd_map_set *fds;
-	int real_fd;
 
 	pthread_rwlock_wrlock(&ci->rwlock);
 	list_for_each_entry(fds, &ci->fd_map_set_list, fds_link) {
@@ -204,6 +203,7 @@ int unmap_fd(struct client_info *ci, int fd, struct fd_map *map)
 		int offs = fd - fds->start_fd;
 		if (fds->fd_maps[offs].real_fd == -1) {
 			pr_debug("fd %d is not alloced\n", fd);
+			pthread_rwlock_unlock(&ci->rwlock);
 			return -EBADF;
 		}
 
