@@ -227,3 +227,30 @@ int unmap_fd(struct client_info *ci, int fd, struct fd_map *map)
 
 	return 0;
 }
+
+int query_fd(struct client_info *ci, int fd, struct fd_map *map)
+{
+	struct fd_map_set *fds;
+	int ret = -EBADF;
+
+	if (ci == NULL)
+		return -EINVAL;
+	if (fd < 0)
+		return -EBADF;
+
+	pthread_rwlock_rdlock(&ci->rwlock);
+	list_for_each_entry(fds, &ci->fd_map_set_list, fds_link) {
+		if (fds->start_fd > fd || fds->start_fd + FD_PER_SET <= fd)
+			continue;
+		if (map != NULL) {
+			int offs = fd - fds->start_fd;
+			map->real_fd = fds->fd_maps[offs].real_fd;
+			map->cid = fds->fd_maps[offs].cid;
+		}
+		ret = 0;
+		break;
+	}
+	pthread_rwlock_unlock(&ci->rwlock);
+
+	return ret;
+}
