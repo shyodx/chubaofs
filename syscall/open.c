@@ -122,6 +122,14 @@ static char *absolute_path(const char *pathname)
 	return canonical_path(cwd);
 }
 
+static inline bool is_valid_open_flags(int flags)
+{
+	if (flags & ~(O_CREAT | O_APPEND | O_TRUNC | O_RDWR | O_WRONLY | O_RDONLY))
+		return false;
+
+	return true;
+}
+
 int open(const char *pathname, int flags, ...)
 {
 	struct client_info *ci = get_client(getpid());
@@ -130,6 +138,12 @@ int open(const char *pathname, int flags, ...)
 	int fd, real_fd;
 	int64_t cid;
 	int ret;
+
+	if (is_valid_open_flags(flags)) {
+		pr_error("Unsupported flags %#x\n", flags);
+		ret = -EINVAL;
+		goto out;
+	}
 
 	if (flags & O_CREAT) {
 		va_list list;
@@ -168,14 +182,46 @@ int open(const char *pathname, int flags, ...)
 	fd = map_fd(ci, real_fd, -1, cid);
 	if (fd < 0) {
 		pr_error("Failed to map fd: %s\n", strerror(-fd));
-		if (cid >= 0) {
-			cfs_close(cid, real_fd);
-		} else {
-			orig_apis.close(real_fd);
-		}
+		goto out_close;
 	}
+
+#if 0
+	if (flags & O_APPEND) {
+		/* get attr: file size */
+		struct fd_map map;
+		off_t filesize;
+
+		if (cid >= 0) {
+			struct cfs_stat_info st;
+			ret = cfs_fgetattr(cid, real_fd, &st);
+			if (ret < 0) {
+				goto out_close;
+			}
+			filesize = st.st_size;
+		} else {
+			struct stat st;
+			ret = orig_apis.fstat(real_fd, &st);
+			if (ret < 0) {
+				goto out_close;
+			}
+			filesize = st.st_size;
+		}
+
+		map.real_fd = real_fd;
+		map.offset = (off_t)filesize;
+		map.cid = cid;
+		update_fd(ci, fd, &map);
+	}
+#endif
+
 	ret = fd;
 
+out_close:
+	if (cid >= 0) {
+		cfs_close(cid, real_fd);
+	} else {
+		orig_apis.close(real_fd);
+	}
 out:
 	put_client(ci);
 	return ret;
