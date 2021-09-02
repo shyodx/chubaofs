@@ -6,4 +6,6 @@
 #define dot "."
 #define dotdot ".."
 
+#define SET_ERRNO(ret) do { errno = (ret) < 0 ? -ret : 0; } while (0)
+
 #endif

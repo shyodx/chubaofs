@@ -17,24 +17,6 @@ LIST_HEAD(client_list);
 pthread_rwlock_t client_list_lock;
 int64_t client_id = 1;
 
-struct cfs_config {
-	char *master_addr;
-	char *volname;
-	char *log_dir;
-	char *log_level;
-	char *follower_read;
-};
-
-/* Each mountpoint could have one cfs_client */
-/* FIXME: we should provide an ioctl to get server info, so that we could
- * create an cfs client and config libsdk */
-struct mountpoint {
-	int64_t cid;
-	struct cfs_config config;
-	struct list_head mountpoint_link;
-	char mnt_dir[0];
-};
-
 /* FIXME: could get cfs_config info from env */
 static int init_cfs_config(struct mountpoint *mnt, const char *volname)
 {
@@ -110,6 +92,10 @@ static void destroy_mountpoints_nolock(struct client_info *ci)
 
 	list_for_each_entry_safe(mnt, next, &ci->mountpoint_list, mountpoint_link) {
 		pr_debug("free mountpoint %s client %"PRId64"\n", mnt->mnt_dir, mnt->cid);
+		int refcnt = atomic_load(&mnt->refcnt);
+		if (refcnt != 0)
+			pr_warn("mountpoint %s client %"PRId64" refcnt %d is still busy\n",
+				mnt->mnt_dir, mnt->cid, refcnt);
 		list_del(&mnt->mountpoint_link);
 		cfs_close_client(mnt->cid);
 		free(mnt->config.master_addr);
@@ -284,7 +270,7 @@ int register_client(struct client_info *ci)
 	pr_debug("Register client %"PRId64"\n", ci->id);
 }
 
-int64_t get_mountpoint_cid(struct client_info *ci, const char *path)
+struct mountpoint *get_mountpoint(struct client_info *ci, const char *path)
 {
 	struct mountpoint *mnt;
 	size_t path_len = strlen(path);
@@ -299,11 +285,18 @@ int64_t get_mountpoint_cid(struct client_info *ci, const char *path)
 			continue;
 		if (!memcmp(mnt->mnt_dir, path, mnt_len) &&
 		    (path[mnt_len] == '\0' || path[mnt_len] == '/')) {
-			cid = mnt->cid;
+			atomic_fetch_add(&mnt->refcnt, 1);
 			break;
 		}
 	}
 	pthread_rwlock_unlock(&ci->rwlock);
 
-	return cid;
+	return mnt;
+}
+
+void put_mountpoint(struct mountpoint *mnt)
+{
+	if (mnt == NULL)
+		return;
+	atomic_fetch_sub(&mnt->refcnt, 1);
 }

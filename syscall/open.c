@@ -130,16 +130,23 @@ static inline bool is_valid_open_flags(int flags)
 	return true;
 }
 
+static const char *get_path_in_cfs(const struct mountpoint *mnt, const char *fullpath)
+{
+	size_t len = strlen(mnt->mnt_dir);
+
+	return fullpath + len;
+}
+
 int open(const char *pathname, int flags, ...)
 {
 	struct client_info *ci = get_client(getpid());
+	struct mountpoint *mnt = NULL;
 	mode_t mode = 0644; /* FIXME: the default value? */
 	char *abs_path;
 	int fd, real_fd;
-	int64_t cid;
 	int ret;
 
-	if (is_valid_open_flags(flags)) {
+	if (!is_valid_open_flags(flags)) {
 		pr_error("Unsupported flags %#x\n", flags);
 		ret = -EINVAL;
 		goto out;
@@ -163,23 +170,27 @@ int open(const char *pathname, int flags, ...)
 	pr_debug("client %"PRId64" open file[%s] abs_path[%s] flags %#x mode 0%o\n",
 		 ci->id, pathname, abs_path, flags, mode);
 
-	cid = get_mountpoint_cid(ci, abs_path);
-	if (cid >= 0) {
-		pr_debug("file[%s] is in cfs path cid %"PRId64"\n", pathname, cid);
-		real_fd = cfs_open(cid, (char *)pathname, flags, mode);
+	mnt = get_mountpoint(ci, abs_path);
+	if (mnt != NULL) {
+		char *path_in_cfs = (char *)get_path_in_cfs(mnt, abs_path);
+		real_fd = cfs_open(mnt->cid, path_in_cfs, flags, mode);
+		pr_debug("file[%s] is in cfs path[%s] cid %"PRId64" real_fd %d\n",
+			 pathname, path_in_cfs, mnt->cid, real_fd);
 	} else {
-		pr_debug("file[%s] is NOT in cfs path\n", pathname);
-		real_fd = orig_apis.open(pathname, flags, mode);
+		real_fd = orig_apis.open(abs_path, flags, mode);
+		pr_debug("file[%s] is NOT in cfs path real_fd %d\n", pathname, real_fd);
 	}
 
 	free(abs_path);
+	abs_path = NULL;
 
 	if (real_fd < 0) {
+		pr_error("Failed to open file[%s]: %d\n", pathname, real_fd);
 		ret = real_fd;
-		goto out;
+		goto out_put;
 	}
 
-	fd = map_fd(ci, real_fd, -1, cid);
+	fd = map_fd(ci, real_fd, -1, mnt->cid);
 	if (fd < 0) {
 		pr_error("Failed to map fd: %s\n", strerror(-fd));
 		goto out_close;
@@ -215,16 +226,20 @@ int open(const char *pathname, int flags, ...)
 #endif
 
 	ret = fd;
+	goto out_put;
 
 out_close:
-	if (cid >= 0) {
-		cfs_close(cid, real_fd);
+	if (mnt->cid >= 0) {
+		cfs_close(mnt->cid, real_fd);
 	} else {
 		orig_apis.close(real_fd);
 	}
+out_put:
+	put_mountpoint(mnt);
 out:
 	put_client(ci);
-	return ret;
+	SET_ERRNO(ret);
+	return ret < 0 ? -1 : ret;
 }
 
 int close(int fd)

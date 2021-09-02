@@ -13,6 +13,25 @@ extern struct list_head client_list;
 #define CI_FLAG_NEW	0
 #define CI_FLAG_READY	(1U << 0)
 
+struct cfs_config {
+	char *master_addr;
+	char *volname;
+	char *log_dir;
+	char *log_level;
+	char *follower_read;
+};
+
+/* Each mountpoint could have one cfs_client */
+/* FIXME: we should provide an ioctl to get server info, so that we could
+ * create an cfs client and config libsdk */
+struct mountpoint {
+	int64_t cid;
+	atomic_int refcnt;
+	struct cfs_config config;
+	struct list_head mountpoint_link;
+	char mnt_dir[0];
+};
+
 struct client_info {
 	pthread_rwlock_t rwlock;
 	pid_t pid;
@@ -33,7 +52,8 @@ void destroy_client(struct client_info *ci);
 void destroy_all_clients(void);
 int register_client(struct client_info *ci);
 int append_mountpoint(struct client_info *ci, const char *mnt_fsname, const char *mnt_dir);
-int64_t get_mountpoint_cid(struct client_info *ci, const char *path);
+struct mountpoint *get_mountpoint(struct client_info *ci, const char *path);
+void put_mountpoint(struct mountpoint *mnt);
 struct client_info *get_client(pid_t pid);
 void put_client(struct client_info *ci);
 
