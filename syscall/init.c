@@ -146,7 +146,7 @@ static __init void init(void)
 
 	list_for_each_entry_safe(open_fd, next, &open_fd_list, link) {
 		/* FIXME: map all opened fd as not in_cfs? */
-		ret = map_fd(ci, open_fd->fd, open_fd->fd, false);
+		ret = map_fd(ci, open_fd->fd, open_fd->fd, -1);
 		if (ret < 0) {
 			pr_error("Failed to map fd: %s\n", strerror(ret));
 			/* FIXME: need cleanup open_fd list */
