@@ -31,20 +31,22 @@ ssize_t read(int fd, void *buf, size_t count)
 	}
 
 	if (map.cid >= 0) {
-		pr_debug("fd[%d] real_fd[%d] offset[%jd] is in cfs path cid %"PRId64"\n",
-			 fd, map.real_fd, map.offset, map.cid);
-		ret = cfs_read(map.cid, map.real_fd, buf, map.offset, count);
+		pr_debug("fd %d real_fd %d offset %jd count %zu is in cfs path cid %"PRId64"\n",
+			 fd, map.real_fd, map.offset, count, map.cid);
+		ret = cfs_read(map.cid, map.real_fd, buf, count, map.offset);
 	} else {
-		pr_debug("fd[%d] real_fd[%d] is NOT in cfs path\n",
+		pr_debug("fd %d real_fd %d is NOT in cfs path\n",
 			 fd, map.real_fd);
-		ret = read(map.real_fd, buf, count);
+		ret = orig_apis.read(map.real_fd, buf, count);
 	}
 
 	if (ret > 0) {
+		map.offset += ret;
 		update_fd(ci, fd, &map);
 	}
 
 out:
 	put_client(ci);
-	return ret;
+	SET_ERRNO(ret);
+	return ret < 0 ? -1 : ret;
 }
