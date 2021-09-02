@@ -31,9 +31,15 @@ static struct fd_map_set *do_append_fd_map_set(struct client_info *ci)
 	INIT_LIST_HEAD(&fds->fds_link);
 
 	/* sorted fds */
+	/* FIXME: start_fd how to calculate? */
+	fds->start_fd = ci->fd_map_set_nr * FD_PER_SET;
+	fds->free_nr = FD_PER_SET;
 	list_add_tail(&fds->fds_link, &ci->fd_map_set_list);
 	ci->fd_map_set_nr++;
 	ci->total_free_fd_nr += FD_PER_SET;
+
+	pr_debug("Alloc new fd_map_set start_fd %d, fd_map_set_nr %u total_free_fd_nr %u\n",
+		 fds->start_fd, ci->fd_map_set_nr, ci->total_free_fd_nr);
 
 	return fds;
 }
@@ -152,10 +158,14 @@ int map_fd(struct client_info *ci, int real_fd, int expected_fd, int64_t cid)
 
 			fds->fd_maps[0].real_fd = real_fd;
 			fds->fd_maps[0].cid = cid;
+			fds->free_nr--;
 			ret = fds->start_fd;
 		} else {
 			for (int i = 0; i < FD_PER_SET; i++) {
 				if (fds->fd_maps[i].real_fd == -1) {
+					fds->fd_maps[i].real_fd = real_fd;
+					fds->fd_maps[i].cid = cid;
+					fds->free_nr--;
 					ret = fds->start_fd + i;
 					break;
 				}
@@ -175,6 +185,7 @@ int map_fd(struct client_info *ci, int real_fd, int expected_fd, int64_t cid)
 
 			fds->fd_maps[offs].real_fd = real_fd;
 			fds->fd_maps[offs].cid = cid;
+			fds->free_nr--;
 			ret = expected_fd;
 
 			break;
@@ -182,8 +193,8 @@ int map_fd(struct client_info *ci, int real_fd, int expected_fd, int64_t cid)
 	}
 
 	if (ret >= 0)
-		pr_debug("map fd %d for real_fd %d expected_fd %d cid %"PRId64" from fds %d\n",
-			 ret, real_fd, expected_fd, cid, fds->start_fd);
+		pr_debug("map fd %d for real_fd %d expected_fd %d cid %"PRId64" from fds %d free_nr %d\n",
+			 ret, real_fd, expected_fd, cid, fds->start_fd, fds->free_nr);
 
 	pthread_rwlock_unlock(&ci->rwlock);
 
@@ -245,6 +256,7 @@ int query_fd(struct client_info *ci, int fd, struct fd_map *map)
 		if (map != NULL) {
 			int offs = fd - fds->start_fd;
 			map->real_fd = fds->fd_maps[offs].real_fd;
+			map->offset = fds->fd_maps[offs].offset;
 			map->cid = fds->fd_maps[offs].cid;
 		}
 		ret = 0;
