@@ -18,7 +18,8 @@
 static struct fd_map_set *do_append_fd_map_set(struct client_info *ci)
 {
 
-	struct fd_map_set *fds;
+	struct fd_map_set *fds, *next;
+	int start_fd = 0;
 
 	fds = malloc(sizeof(struct fd_map_set));
 	if (fds == NULL)
@@ -28,13 +29,19 @@ static struct fd_map_set *do_append_fd_map_set(struct client_info *ci)
 		fds->fd_maps[i].real_fd = -1;
 	}
 
-	INIT_LIST_HEAD(&fds->fds_link);
+	list_for_each_entry(next, &ci->fd_map_set_list, fds_link) {
+		if (start_fd >= next->start_fd) {
+			start_fd += FD_PER_SET;
+			continue;
+		}
+		break;
+	}
 
-	/* sorted fds */
-	/* FIXME: start_fd how to calculate? */
-	fds->start_fd = ci->fd_map_set_nr * FD_PER_SET;
+	/* sorted fds, add fds before `next' */
+	INIT_LIST_HEAD(&fds->fds_link);
+	fds->start_fd = start_fd;
 	fds->free_nr = FD_PER_SET;
-	list_add_tail(&fds->fds_link, &ci->fd_map_set_list);
+	list_add_tail(&fds->fds_link, &next->fds_link);
 	ci->fd_map_set_nr++;
 	ci->total_free_fd_nr += FD_PER_SET;
 
