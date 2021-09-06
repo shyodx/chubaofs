@@ -322,6 +322,62 @@ func cfs_getattr(id C.int64_t, path *C.char, stat *C.struct_cfs_stat_info) C.int
 	return statusOK
 }
 
+func cfs_fgetattr(id C.int64_t, fd C.int, stat *C.struct_cfs_stat_info) C.int {
+	c, exist := getClient(int64(id))
+	if !exist {
+		return statusEINVAL
+	}
+
+	f := c.getFile(uint(fd))
+	if f == nil {
+		return statusEBADFD
+	}
+
+	info, err := c.mw.InodeGet_ll(f.ino)
+	if err != nil {
+		return errorToStatus(err)
+	}
+
+	// fill up the stat
+	stat.ino = C.uint64_t(info.Inode)
+	stat.size = C.uint64_t(info.Size)
+	stat.nlink = C.uint32_t(info.Nlink)
+	stat.blk_size = C.uint32_t(defaultBlkSize)
+	stat.uid = C.uint32_t(info.Uid)
+	stat.gid = C.uint32_t(info.Gid)
+
+	if info.Size%512 != 0 {
+		stat.blocks = C.uint64_t(info.Size>>9) + 1
+	} else {
+		stat.blocks = C.uint64_t(info.Size >> 9)
+	}
+	// fill up the mode
+	if proto.IsRegular(info.Mode) {
+		stat.mode = C.uint32_t(C.S_IFREG) | C.uint32_t(info.Mode&0777)
+	} else if proto.IsDir(info.Mode) {
+		stat.mode = C.uint32_t(C.S_IFDIR) | C.uint32_t(info.Mode&0777)
+	} else if proto.IsSymlink(info.Mode) {
+		stat.mode = C.uint32_t(C.S_IFLNK) | C.uint32_t(info.Mode&0777)
+	} else {
+		stat.mode = C.uint32_t(C.S_IFSOCK) | C.uint32_t(info.Mode&0777)
+	}
+
+	// fill up the time struct
+	t := info.AccessTime.UnixNano()
+	stat.atime = C.uint64_t(t / 1e9)
+	stat.atime_nsec = C.uint32_t(t % 1e9)
+
+	t = info.ModifyTime.UnixNano()
+	stat.mtime = C.uint64_t(t / 1e9)
+	stat.mtime_nsec = C.uint32_t(t % 1e9)
+
+	t = info.CreateTime.UnixNano()
+	stat.ctime = C.uint64_t(t / 1e9)
+	stat.ctime_nsec = C.uint32_t(t % 1e9)
+
+	return statusOK
+}
+
 //export cfs_setattr
 func cfs_setattr(id C.int64_t, path *C.char, stat *C.struct_cfs_stat_info, valid C.int) C.int {
 	c, exist := getClient(int64(id))

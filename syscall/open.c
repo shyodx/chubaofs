@@ -196,34 +196,21 @@ int open(const char *pathname, int flags, ...)
 		goto out_close;
 	}
 
-#if 0
-	if (flags & O_APPEND) {
+	if ((flags & O_APPEND) && (mnt->cid >= 0)) {
 		/* get attr: file size */
 		struct fd_map map;
-		off_t filesize;
+		struct cfs_stat_info st;
 
-		if (cid >= 0) {
-			struct cfs_stat_info st;
-			ret = cfs_fgetattr(cid, real_fd, &st);
-			if (ret < 0) {
-				goto out_close;
-			}
-			filesize = st.st_size;
-		} else {
-			struct stat st;
-			ret = orig_apis.fstat(real_fd, &st);
-			if (ret < 0) {
-				goto out_close;
-			}
-			filesize = st.st_size;
+		ret = cfs_fgetattr(mnt->cid, real_fd, &st);
+		if (ret < 0) {
+			goto out_close;
 		}
 
 		map.real_fd = real_fd;
-		map.offset = (off_t)filesize;
-		map.cid = cid;
+		map.offset = (off_t)st.size;
+		map.cid = mnt->cid;
 		update_fd(ci, fd, &map);
 	}
-#endif
 
 	ret = fd;
 	goto out_put;
