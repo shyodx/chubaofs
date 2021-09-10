@@ -286,10 +286,15 @@ struct mountpoint *get_mountpoint(struct client_info *ci, const char *path)
 		if (!memcmp(mnt->mnt_dir, path, mnt_len) &&
 		    (path[mnt_len] == '\0' || path[mnt_len] == '/')) {
 			atomic_fetch_add(&mnt->refcnt, 1);
+			cid = mnt->cid;
 			break;
 		}
 	}
 	pthread_rwlock_unlock(&ci->rwlock);
+
+	if (cid == -1) {
+		return NULL;
+	}
 
 	return mnt;
 }

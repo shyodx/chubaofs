@@ -144,6 +144,7 @@ int open(const char *pathname, int flags, ...)
 	mode_t mode = 0644; /* FIXME: the default value? */
 	char *abs_path;
 	int fd, real_fd;
+	int64_t cid;
 	int ret;
 
 	if (!is_valid_open_flags(flags)) {
@@ -176,9 +177,11 @@ int open(const char *pathname, int flags, ...)
 		real_fd = cfs_open(mnt->cid, path_in_cfs, flags, mode);
 		pr_debug("file[%s] is in cfs path[%s] cid %"PRId64" real_fd %d\n",
 			 pathname, path_in_cfs, mnt->cid, real_fd);
+		cid = mnt->cid;
 	} else {
 		real_fd = orig_apis.open(abs_path, flags, mode);
 		pr_debug("file[%s] is NOT in cfs path real_fd %d\n", pathname, real_fd);
+		cid = -1;
 	}
 
 	free(abs_path);
@@ -190,25 +193,25 @@ int open(const char *pathname, int flags, ...)
 		goto out_put;
 	}
 
-	fd = map_fd(ci, real_fd, -1, mnt->cid);
+	fd = map_fd(ci, real_fd, -1, cid);
 	if (fd < 0) {
 		pr_error("Failed to map fd: %s\n", strerror(-fd));
 		goto out_close;
 	}
 
-	if ((flags & O_APPEND) && (mnt->cid >= 0)) {
+	if ((flags & O_APPEND) && (cid >= 0)) {
 		/* get attr: file size */
 		struct fd_map map;
 		struct cfs_stat_info st;
 
-		ret = cfs_fgetattr(mnt->cid, real_fd, &st);
+		ret = cfs_fgetattr(cid, real_fd, &st);
 		if (ret < 0) {
 			goto out_close;
 		}
 
 		map.real_fd = real_fd;
 		map.offset = (off_t)st.size;
-		map.cid = mnt->cid;
+		map.cid = cid;
 		update_fd(ci, fd, &map);
 	}
 
@@ -216,8 +219,8 @@ int open(const char *pathname, int flags, ...)
 	goto out_put;
 
 out_close:
-	if (mnt->cid >= 0) {
-		cfs_close(mnt->cid, real_fd);
+	if (cid >= 0) {
+		cfs_close(cid, real_fd);
 	} else {
 		orig_apis.close(real_fd);
 	}
