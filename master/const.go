@@ -54,6 +54,8 @@ const (
 	dpSelectorParmKey       = "dpSelectorParm"
 	signatureKey            = "signature"
 	signatureHeaderKey      = "X-CBFS-Signature"
+	nodeTypeKey             = "nodeType"
+	rdOnlyKey               = "rdOnly"
 )
 
 const (
