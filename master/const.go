@@ -56,6 +56,8 @@ const (
 	signatureHeaderKey      = "X-CBFS-Signature"
 	nodeTypeKey             = "nodeType"
 	rdOnlyKey               = "rdOnly"
+	srcAddrKey              = "srcAddr"
+	targetAddrKey           = "targetAddr"
 )
 
 const (
