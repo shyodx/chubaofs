@@ -259,6 +259,25 @@ func (policy *UserPolicy) Delete(deletePolicy *UserPolicy) {
 	}
 }
 
+func (policy *UserPolicy) Copy() (newUserPolicy *UserPolicy) {
+	newUserPolicy = NewUserPolicy()
+	policy.mu.Lock()
+	defer policy.mu.Unlock()
+	for _, vol := range policy.OwnVols {
+		newUserPolicy.OwnVols = append(newUserPolicy.OwnVols, vol)
+	}
+	for vol, apis := range policy.AuthorizedVols {
+		newAPI := make([]string, 0)
+		for _, api := range apis {
+			newAPI = append(newAPI, api)
+		}
+		newUserPolicy.AuthorizedVols[vol] = newAPI
+	}
+	return
+}
+
+
+
 func removeSlice(s []string, removeSlice []string) []string {
 	if len(s) == 0 {
 		return s
