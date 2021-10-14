@@ -100,6 +100,7 @@ type ClusterView struct {
 	MaxDataPartitionID  uint64
 	MaxMetaNodeID       uint64
 	MaxMetaPartitionID  uint64
+	EnableSimpleAuth    bool
 	DataNodeStatInfo    *NodeStatInfo
 	MetaNodeStatInfo    *NodeStatInfo
 	VolStatInfo         []*VolStatInfo

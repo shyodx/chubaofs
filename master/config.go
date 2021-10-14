@@ -92,6 +92,7 @@ type clusterConfig struct {
 	heartbeatPort                       int64
 	replicaPort                         int64
 	diffSpaceUsage                      uint64
+	enableSimpleAuth                    bool
 }
 
 func newClusterConfig() (cfg *clusterConfig) {

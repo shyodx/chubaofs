@@ -49,6 +49,7 @@ const (
 	cfgTickInterval   = "tickInterval"
 	cfgElectionTick   = "electionTick"
 	SecretKey         = "masterServiceKey"
+	EnableSimpleAuth  = "enableSimpleAuth"
 )
 
 var (
@@ -88,6 +89,10 @@ type Server struct {
 // NewServer creates a new server
 func NewServer() *Server {
 	return &Server{}
+}
+
+func (m *Server) enableSimpleAuth() bool {
+	return m.config.enableSimpleAuth
 }
 
 // Start starts a server
@@ -156,6 +161,8 @@ func (m *Server) checkConfig(cfg *config.Config) (err error) {
 	if m.id, err = strconv.ParseUint(cfg.GetString(ID), 10, 64); err != nil {
 		return fmt.Errorf("%v,err:%v", proto.ErrInvalidCfg, err.Error())
 	}
+	m.config.enableSimpleAuth = cfg.GetBoolWithDefault(EnableSimpleAuth, false)
+	syslog.Println("enableSimpleAuth=", m.config.enableSimpleAuth)
 	m.config.heartbeatPort = cfg.GetInt64(heartbeatPortKey)
 	m.config.replicaPort = cfg.GetInt64(replicaPortKey)
 	if m.config.heartbeatPort <= 1024 {
