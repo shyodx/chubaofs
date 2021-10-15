@@ -201,6 +201,9 @@ func (api *AdminAPI) DeleteVolume(volName, authKey string) (err error) {
 	var request = newAPIRequest(http.MethodGet, proto.AdminDeleteVol)
 	request.addParam("name", volName)
 	request.addParam("authKey", authKey)
+	if err = api.mc.generateSignature(request); err != nil {
+		return
+	}
 	if _, err = api.mc.serveRequest(request); err != nil {
 		return
 	}
@@ -217,6 +220,9 @@ func (api *AdminAPI) UpdateVolume(volName string, capacity uint64, replicas int,
 	request.addParam("enableToken", strconv.FormatBool(enableToken))
 	request.addParam("authenticate", strconv.FormatBool(authenticate))
 	request.addParam("zoneName", zoneName)
+	if err = api.mc.generateSignature(request); err != nil {
+		return
+	}
 	if _, err = api.mc.serveRequest(request); err != nil {
 		return
 	}
@@ -228,6 +234,9 @@ func (api *AdminAPI) VolShrink(volName string, capacity uint64, authKey string) 
 	request.addParam("name", volName)
 	request.addParam("authKey", authKey)
 	request.addParam("capacity", strconv.FormatUint(capacity, 10))
+	if err = api.mc.generateSignature(request); err != nil {
+		return
+	}
 	if _, err = api.mc.serveRequest(request); err != nil {
 		return
 	}
@@ -239,6 +248,9 @@ func (api *AdminAPI) VolExpand(volName string, capacity uint64, authKey string) 
 	request.addParam("name", volName)
 	request.addParam("authKey", authKey)
 	request.addParam("capacity", strconv.FormatUint(capacity, 10))
+	if err = api.mc.generateSignature(request); err != nil {
+		return
+	}
 	if _, err = api.mc.serveRequest(request); err != nil {
 		return
 	}
@@ -255,6 +267,9 @@ func (api *AdminAPI) CreateVolume(volName, owner string, mpCount int,
 	request.addParam("capacity", strconv.FormatUint(capacity, 10))
 	request.addParam("followerRead", strconv.FormatBool(followerRead))
 	request.addParam("zoneName", zoneName)
+	if err = api.mc.generateSignature(request); err != nil {
+		return
+	}
 	if _, err = api.mc.serveRequest(request); err != nil {
 		return
 	}
@@ -266,6 +281,9 @@ func (api *AdminAPI) CreateDefaultVolume(volName, owner string) (err error) {
 	request.addParam("name", volName)
 	request.addParam("owner", owner)
 	request.addParam("capacity", "10")
+	if err = api.mc.generateSignature(request); err != nil {
+		return
+	}
 	if _, err = api.mc.serveRequest(request); err != nil {
 		return
 	}

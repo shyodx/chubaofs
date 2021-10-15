@@ -549,11 +549,23 @@ func (m *Server) markDeleteVol(w http.ResponseWriter, r *http.Request) {
 		authKey string
 		err     error
 		msg     string
+		signs   []*proto.AuthSignature
 	)
 
 	if name, authKey, err = parseRequestToDeleteVol(r); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
 		return
+	}
+
+	if m.enableSimpleAuth() {
+		if signs, err = m.parseSignatures(r); err != nil {
+			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
+			return
+		}
+		if err = m.verifySignatures(signs, r.URL.EscapedPath(), name, AuthOwnerPermission); err != nil {
+			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeNoPermission, Msg: err.Error()})
+			return
+		}
 	}
 	if err = m.cluster.markDeleteVol(name, authKey); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
@@ -583,6 +595,7 @@ func (m *Server) updateVol(w http.ResponseWriter, r *http.Request) {
 		dpSelectorName string
 		dpSelectorParm string
 		vol            *Vol
+		signs          []*proto.AuthSignature
 	)
 
 	if name, authKey, description, err = parseRequestToUpdateVol(r); err != nil {
@@ -607,6 +620,17 @@ func (m *Server) updateVol(w http.ResponseWriter, r *http.Request) {
 	if followerRead, authenticate, err = parseBoolFieldToUpdateVol(r, vol); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
 		return
+	}
+
+	if m.enableSimpleAuth() {
+		if signs, err = m.parseSignatures(r); err != nil {
+			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
+			return
+		}
+		if err = m.verifySignatures(signs, r.URL.EscapedPath(), name, AuthOwnerPermission); err != nil {
+			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeNoPermission, Msg: err.Error()})
+			return
+		}
 	}
 
 	newArgs := getVolVarargs(vol)
@@ -635,10 +659,22 @@ func (m *Server) volExpand(w http.ResponseWriter, r *http.Request) {
 		msg      string
 		capacity int
 		vol      *Vol
+		signs    []*proto.AuthSignature
 	)
 	if name, authKey, capacity, err = parseRequestToSetVolCapacity(r); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
 		return
+	}
+
+	if m.enableSimpleAuth() {
+		if signs, err = m.parseSignatures(r); err != nil {
+			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
+			return
+		}
+		if err = m.verifySignatures(signs, r.URL.EscapedPath(), name, AuthOwnerPermission); err != nil {
+			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeNoPermission, Msg: err.Error()})
+			return
+		}
 	}
 	if vol, err = m.cluster.getVol(name); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVolNotExists, Msg: err.Error()})
@@ -669,10 +705,22 @@ func (m *Server) volShrink(w http.ResponseWriter, r *http.Request) {
 		msg      string
 		capacity int
 		vol      *Vol
+		signs    []*proto.AuthSignature
 	)
 	if name, authKey, capacity, err = parseRequestToSetVolCapacity(r); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
 		return
+	}
+
+	if m.enableSimpleAuth() {
+		if signs, err = m.parseSignatures(r); err != nil {
+			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
+			return
+		}
+		if err = m.verifySignatures(signs, r.URL.EscapedPath(), name, AuthOwnerPermission); err != nil {
+			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeNoPermission, Msg: err.Error()})
+			return
+		}
 	}
 	if vol, err = m.cluster.getVol(name); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeVolNotExists, Msg: err.Error()})
@@ -711,6 +759,7 @@ func (m *Server) createVol(w http.ResponseWriter, r *http.Request) {
 		crossZone    bool
 		zoneName     string
 		description  string
+		signs        []*proto.AuthSignature
 	)
 
 	if name, owner, zoneName, description, mpCount, dpReplicaNum, size, capacity, followerRead, authenticate, crossZone, err = parseRequestToCreateVol(r); err != nil {
@@ -721,6 +770,17 @@ func (m *Server) createVol(w http.ResponseWriter, r *http.Request) {
 		err = fmt.Errorf("replicaNum can only be 2 and 3,received replicaNum is[%v]", dpReplicaNum)
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
 		return
+	}
+
+	if m.enableSimpleAuth() {
+		if signs, err = m.parseSignatures(r); err != nil {
+			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
+			return
+		}
+		if err = m.verifySignatures(signs, r.URL.EscapedPath(), owner, AuthNormalPermission); err != nil {
+			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeNoPermission, Msg: err.Error()})
+			return
+		}
 	}
 	if vol, err = m.cluster.createVol(name, owner, zoneName, description, mpCount, dpReplicaNum, size, capacity, followerRead, authenticate, crossZone); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(err))
