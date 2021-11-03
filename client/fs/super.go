@@ -69,6 +69,8 @@ func NewSuper(opt *proto.MountOptions) (s *Super, err error) {
 	var metaConfig = &meta.MetaConfig{
 		Volume:        opt.Volname,
 		Owner:         opt.Owner,
+		AccessKey:     opt.AccessKey,
+		SecretKey:     opt.SecretKey,
 		Masters:       masters,
 		Authenticate:  opt.Authenticate,
 		TicketMess:    opt.TicketMess,

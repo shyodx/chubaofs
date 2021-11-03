@@ -41,6 +41,7 @@ type VolumeLoader struct {
 	closeOnce  sync.Once
 	closeCh    chan struct{}
 	metaStrict bool
+	user       *proto.AuthUser
 }
 
 func (loader *VolumeLoader) blacklistCleanup() {
@@ -132,6 +133,7 @@ func (loader *VolumeLoader) loadVolume(volName string) (*Volume, error) {
 		}
 		var config = &VolumeConfig{
 			Volume:           volName,
+			user:             loader.user,
 			Masters:          loader.masters,
 			Store:            loader.store,
 			OnAsyncTaskError: onAsyncTaskError,
@@ -187,6 +189,7 @@ func NewVolumeLoader(masters []string, store Store, strict bool) *VolumeLoader {
 
 type VolumeManager struct {
 	masters    []string
+	user       *proto.AuthUser
 	mc         *master.MasterClient
 	loaders    [volumeLoaderNum]*VolumeLoader
 	store      Store
@@ -223,12 +226,14 @@ func (m *VolumeManager) init() {
 	}
 	for i := 0; i < len(m.loaders); i++ {
 		m.loaders[i] = NewVolumeLoader(m.masters, m.store, m.metaStrict)
+		m.loaders[i].user = m.user
 	}
 }
 
-func NewVolumeManager(masters []string, strict bool) *VolumeManager {
+func NewVolumeManager(masters []string, strict bool, users []*proto.AuthUser) *VolumeManager {
 	manager := &VolumeManager{
 		masters:    masters,
+		user:       users[0],
 		closeCh:    make(chan struct{}),
 		metaStrict: strict,
 	}

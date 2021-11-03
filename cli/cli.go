@@ -16,11 +16,12 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/chubaofs/chubaofs/cli/cmd"
 	"github.com/chubaofs/chubaofs/sdk/master"
 	"github.com/chubaofs/chubaofs/util/log"
 	"github.com/spf13/cobra"
-	"os"
 )
 
 var (
@@ -45,6 +46,7 @@ func runCLI() (err error) {
 func setupCommands(cfg *cmd.Config) *cobra.Command {
 	var mc = master.NewMasterClient(cfg.MasterAddr, false)
 	mc.SetTimeout(cfg.Timeout)
+	mc.SetUsers(cfg.AuthUsers)
 	cfsRootCmd := cmd.NewRootCmd(mc)
 	var completionCmd = &cobra.Command{
 		Use:   "completion",

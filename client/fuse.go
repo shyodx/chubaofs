@@ -369,32 +369,30 @@ func parseMountOption(cfg *config.Config) (*proto.MountOptions, error) {
 func checkPermission(opt *proto.MountOptions) (err error) {
 	var mc = master.NewMasterClientFromString(opt.Master, false)
 
-	// Check user access policy is enabled
-	if opt.AccessKey != "" {
-		var userInfo *proto.UserInfo
-		if userInfo, err = mc.UserAPI().GetAKInfo(opt.AccessKey); err != nil {
-			return
-		}
-		if userInfo.SecretKey != opt.SecretKey {
-			err = proto.ErrNoPermission
-			return
-		}
-		var policy = userInfo.Policy
-		if policy.IsOwn(opt.Volname) {
-			return
-		}
-		if policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXWriteAction) &&
-			policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXReadAction) {
-			return
-		}
-		if policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXReadAction) &&
-			!policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXWriteAction) {
-			opt.Rdonly = true
-			return
-		}
+	user := &proto.AuthUser{opt.Owner, opt.AccessKey, opt.SecretKey}
+	users := make([]*proto.AuthUser, 0)
+	users = append(users, user)
+	mc.SetUsers(users)
+
+	var userInfo *proto.UserInfo
+	if userInfo, err = mc.UserAPI().GetAKInfo(opt.AccessKey); err != nil {
+		return
+	}
+	if userInfo.SecretKey != opt.SecretKey {
 		err = proto.ErrNoPermission
 		return
 	}
+	var policy = userInfo.Policy
+	if policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXWriteAction) &&
+		policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXReadAction) {
+		return
+	}
+	if policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXReadAction) &&
+		!policy.IsAuthorized(opt.Volname, opt.SubDir, proto.POSIXWriteAction) {
+		opt.Rdonly = true
+		return
+	}
+	err = proto.ErrNoPermission
 	return
 }
 

@@ -76,6 +76,8 @@ type VolumeConfig struct {
 
 	// Get OSSMeta from the MetaNode every time if it is set true.
 	MetaStrict bool
+
+	user *proto.AuthUser
 }
 
 type PutFileOption struct {
@@ -2345,6 +2347,12 @@ func NewVolume(config *VolumeConfig) (*Volume, error) {
 		OnAsyncTaskError: func(err error) {
 			config.OnAsyncTaskError.OnError(err)
 		},
+	}
+
+	if config.user != nil {
+		metaConfig.Owner = config.user.UserID
+		metaConfig.AccessKey = config.user.AccessKey
+		metaConfig.SecretKey = config.user.SecretKey
 	}
 
 	var metaWrapper *meta.MetaWrapper

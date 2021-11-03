@@ -31,7 +31,7 @@ type FileService struct {
 
 func NewFileService(objectNode string, masters []string, mc *client.MasterGClient) *FileService {
 	return &FileService{
-		manager:    NewVolumeManager(masters, true),
+		manager:    NewVolumeManager(masters, true, make([]*proto.AuthUser, 0)),
 		userClient: &user.UserClient{mc},
 		objectNode: objectNode,
 	}

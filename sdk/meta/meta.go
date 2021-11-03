@@ -71,6 +71,8 @@ func (f AsyncTaskErrorFunc) OnError(err error) {
 type MetaConfig struct {
 	Volume           string
 	Owner            string
+	AccessKey        string
+	SecretKey        string
 	Masters          []string
 	Authenticate     bool
 	TicketMess       auth.TicketMess
@@ -161,6 +163,12 @@ func NewMetaWrapper(config *MetaConfig) (*MetaWrapper, error) {
 	mw.owner = config.Owner
 	mw.ownerValidation = config.ValidateOwner
 	mw.mc = masterSDK.NewMasterClient(config.Masters, false)
+	if !config.Authenticate && config.AccessKey != "" && config.SecretKey != "" {
+		user := &proto.AuthUser{config.Owner, config.AccessKey, config.SecretKey}
+		users := make([]*proto.AuthUser, 0)
+		users = append(users, user)
+		mw.mc.SetUsers(users)
+	}
 	mw.onAsyncTaskError = config.OnAsyncTaskError
 	mw.conns = util.NewConnectPool()
 	mw.partitions = make(map[uint64]*MetaPartition)
