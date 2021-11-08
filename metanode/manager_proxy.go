@@ -15,6 +15,7 @@
 package metanode
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/chubaofs/chubaofs/proto"
@@ -73,11 +74,11 @@ func (m *metadataManager) serveProxy(conn net.Conn, mp MetaPartition,
 	m.connPool.PutConnect(mConn, NoClosedConnect)
 end:
 	m.respondToClient(conn, p)
+	msg := fmt.Sprintf("[serveProxy]: remote: %v partition id: %v req: %d - %v",
+		conn.RemoteAddr(), p.PartitionID, p.GetReqID(), p.GetOpMsg())
 	if err != nil {
-		log.LogErrorf("[serveProxy]: req: %d - %v, %s", p.GetReqID(),
-			p.GetOpMsg(), err.Error())
+		log.LogErrorf("%v, err(%v)", msg, err)
 	}
-	log.LogDebugf("[serveProxy] req: %d - %v, resp: %v", p.GetReqID(), p.GetOpMsg(),
-		p.GetResultMsg())
+	log.LogDebug(msg)
 	return
 }
