@@ -149,12 +149,15 @@ retry:
 
 // Open request shall grab the lock until request is sent to the request channel
 func (client *ExtentClient) OpenStream(inode uint64) error {
+	fmt.Printf("start OpenStream for ino %v\n", inode)
 	client.streamerLock.Lock()
 	s, ok := client.streamers[inode]
 	if !ok {
+		fmt.Printf("get streamer for ino %v\n", inode)
 		s = NewStreamer(client, inode)
 		client.streamers[inode] = s
 	}
+	fmt.Printf("get streamer for ino %v\n", inode)
 	return s.IssueOpenRequest()
 }
 

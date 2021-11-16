@@ -20,15 +20,25 @@
 
 #define FSTYPE "fuse.chubaofs"
 
-/*
-const char *api_names[] = {
-	"open",
-	"close",
-	NULL
-};
-*/
-
 struct orig_apis orig_apis = {NULL};
+
+//#define SAVE_ORIG_API(name, type)\
+//typedef _orig_api_#name_type_ type;\
+//static inline int _save_orig_api_for_#name#(void)\
+//{\
+//	int err; \
+//	void *func = dlsym(RTLD_NEXT, ""#name#"");\
+//	if (func == NULL) {\
+//		err = -errno;\
+//		pr_error("Failed to get original "#name#" function: %s\n", strerror(errno));\
+//		return err;\
+//	}\
+//	orig_apis.#name = func;\
+//	return 0;\
+//}
+//
+//
+//#define GET_ORIG_API(name)
 
 static int init_orig_apis(void)
 {
@@ -60,6 +70,13 @@ static int init_orig_apis(void)
 	if (orig_apis.write == NULL) {
 		err = -errno;
 		pr_error("Failed to get orignal %s function: %s\n", "write", strerror(errno));
+		return err;
+	}
+
+	orig_apis.fork = dlsym(RTLD_NEXT, "fork");
+	if (orig_apis.fork == NULL) {
+		err = -errno;
+		pr_error("Failed to get orignal %s function: %s\n", "fork", strerror(errno));
 		return err;
 	}
 

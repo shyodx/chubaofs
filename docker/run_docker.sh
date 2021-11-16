@@ -1,8 +1,9 @@
 #! /bin/bash
 set -e
-RootPath=$(cd $(dirname $0)/..; pwd)
+#RootPath=$(cd $(dirname $0)/..; pwd)
+RootPath=/home/shengyong/go/src/github.com/chubaofs/chubaofs
 GOPATH=/go
-export DiskPath="$RootPath/docker/docker_data"
+export DiskPath="/home/shengyong/go/src/github.com/chubaofs/chubaofs/docker/docker_data"
 
 MIN_DNDISK_AVAIL_SIZE_GB=10
 

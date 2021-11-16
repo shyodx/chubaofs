@@ -16,12 +16,14 @@ package stream
 
 import (
 	"fmt"
-	"golang.org/x/net/context"
 	"hash/crc32"
 	"net"
+	"os"
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"golang.org/x/net/context"
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/data/wrapper"
@@ -92,8 +94,11 @@ type EvictRequest struct {
 func (s *Streamer) IssueOpenRequest() error {
 	request := openRequestPool.Get().(*OpenRequest)
 	request.done = make(chan struct{}, 1)
+	fmt.Printf("start issue OpenRequest queue len(%v) size(%v)\n", len(s.request), cap(s.request))
 	s.request <- request
+	fmt.Printf("after issue OpenRequest queue len(%v) capacity(%v)\n", len(s.request), cap(s.request))
 	s.client.streamerLock.Unlock()
+	fmt.Printf("wait done queue len(%v) capacity(%v)\n", len(request.done), cap(request.done))
 	<-request.done
 	openRequestPool.Put(request)
 	return nil
@@ -179,6 +184,7 @@ func (s *Streamer) server() {
 			log.LogDebugf("done server: evict, ino(%v)", s.inode)
 			return
 		case <-t.C:
+			fmt.Printf("ino %v PID %d streamer goroutine \n", s.inode, os.Getpid()); 
 			s.traverse()
 			if s.refcnt <= 0 {
 				s.client.streamerLock.Lock()
@@ -238,6 +244,7 @@ func (s *Streamer) abortRequest(request interface{}) {
 func (s *Streamer) handleRequest(request interface{}) {
 	switch request := request.(type) {
 	case *OpenRequest:
+		fmt.Printf("handle OpenRequest\n")
 		s.open()
 		request.done <- struct{}{}
 	case *WriteRequest:
@@ -528,6 +535,7 @@ func (s *Streamer) closeOpenHandler() {
 
 func (s *Streamer) open() {
 	s.refcnt++
+        fmt.Printf("open: streamer(%v) refcnt(%v)\n", s, s.refcnt)
 	log.LogDebugf("open: streamer(%v) refcnt(%v)", s, s.refcnt)
 }
 

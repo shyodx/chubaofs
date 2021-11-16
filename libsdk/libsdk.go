@@ -51,6 +51,7 @@ struct cfs_dirent {
 import "C"
 
 import (
+	"fmt"
 	"io"
 	"os"
 	gopath "path"
@@ -322,6 +323,7 @@ func cfs_getattr(id C.int64_t, path *C.char, stat *C.struct_cfs_stat_info) C.int
 	return statusOK
 }
 
+//export cfs_fgetattr
 func cfs_fgetattr(id C.int64_t, fd C.int, stat *C.struct_cfs_stat_info) C.int {
 	c, exist := getClient(int64(id))
 	if !exist {
@@ -768,6 +770,36 @@ func cfs_fchmod(id C.int64_t, fd C.int, mode C.mode_t) C.int {
 		return errorToStatus(err)
 	}
 	return statusOK
+}
+
+//export cfs_dup
+func cfs_dup(id C.int64_t, oldfd C.int) C.int {
+	c, exist := getClient(int64(id))
+	if !exist {
+		return statusEINVAL
+	}
+	fmt.Printf("get client from cid %v\n", int64(id))
+
+	oldf := c.getFile(uint(oldfd))
+	if oldf == nil {
+		return statusEBADFD
+	}
+	fmt.Printf("get file (%v) from fd %v\n", oldf, oldfd)
+
+	/* FIXME: this is not that correct, we should only have one file.
+	 * but the file has no refcnt in it. In this case, two files cannot
+	 * share pos, especially in parent/child processes.
+	 */
+	newf := c.allocFD(oldf.ino, oldf.flags, oldf.mode)
+	if newf == nil {
+		return statusEMFILE;
+	}
+	fmt.Printf("alloc new file %v for file (%v)\n", newf, oldf)
+
+	c.openStream(newf)
+	fmt.Printf("end of open new streamer for fd %v\n", newf.fd)
+
+	return C.int(newf.fd)
 }
 
 // internals
