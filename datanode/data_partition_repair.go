@@ -16,7 +16,6 @@ package datanode
 
 import (
 	"encoding/json"
-	"github.com/chubaofs/chubaofs/util"
 	"math"
 	"net"
 	"sync"
@@ -24,12 +23,14 @@ import (
 
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/repl"
 	"github.com/chubaofs/chubaofs/storage"
+	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
-	"hash/crc32"
 )
 
 // DataPartitionRepairTask defines the reapir task for the data partition.

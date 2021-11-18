@@ -2,9 +2,12 @@ package cluster
 
 //auto generral by sdk/graphql general.go
 
-import "context"
-import "github.com/chubaofs/chubaofs/sdk/graphql/client"
-import "time"
+import (
+	"context"
+	"time"
+
+	"github.com/chubaofs/chubaofs/sdk/graphql/client"
+)
 
 type ClusterClient struct {
 	*client.MasterGClient

@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/log"
-	"sync/atomic"
-	"time"
 )
 
 var (

@@ -2,9 +2,10 @@ package exporter
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/chubaofs/chubaofs/util/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"sync"
 )
 
 var (

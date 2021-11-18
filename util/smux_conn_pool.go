@@ -16,7 +16,6 @@ package util
 
 import (
 	"fmt"
-	"github.com/chubaofs/chubaofs/util/errors"
 	"io"
 	"net"
 	"smux"
@@ -27,6 +26,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/chubaofs/chubaofs/util/errors"
 )
 
 const (

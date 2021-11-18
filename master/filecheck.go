@@ -16,11 +16,12 @@ package master
 
 import (
 	"fmt"
-	"github.com/chubaofs/chubaofs/storage"
-	"github.com/chubaofs/chubaofs/util/log"
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/chubaofs/chubaofs/storage"
+	"github.com/chubaofs/chubaofs/util/log"
 )
 
 // Recover a file if it has bad CRC or it has been timed out before.

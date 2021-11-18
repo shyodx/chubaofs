@@ -2,11 +2,12 @@ package master
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/log"
-	"testing"
-	"time"
 )
 
 func TestAutoCreateDataPartitions(t *testing.T) {

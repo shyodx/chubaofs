@@ -15,15 +15,15 @@
 package master
 
 import (
-	"sync"
-
 	"fmt"
+	"math"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
-	"math"
-	"strings"
-	"time"
 )
 
 // MetaReplica defines the replica of a meta partition

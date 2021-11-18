@@ -17,11 +17,11 @@ package authnode
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/chubaofs/chubaofs/util"
 	"time"
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/raftstore"
+	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/caps"
 	"github.com/chubaofs/chubaofs/util/cryptoutil"
 	"github.com/chubaofs/chubaofs/util/errors"

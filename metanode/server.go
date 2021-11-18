@@ -15,12 +15,12 @@
 package metanode
 
 import (
-	"github.com/chubaofs/chubaofs/util"
 	"io"
 	"net"
 	"smux"
 
 	"github.com/chubaofs/chubaofs/proto"
+	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/log"
 )
 

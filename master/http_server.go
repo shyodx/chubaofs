@@ -18,17 +18,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/samsarahq/thunder/graphql"
-	"github.com/samsarahq/thunder/graphql/introspection"
 	"net/http"
 	"net/http/httputil"
-
-	"github.com/gorilla/mux"
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/config"
 	"github.com/chubaofs/chubaofs/util/exporter"
 	"github.com/chubaofs/chubaofs/util/log"
+	"github.com/gorilla/mux"
+	"github.com/samsarahq/thunder/graphql"
+	"github.com/samsarahq/thunder/graphql/introspection"
 )
 
 func (m *Server) startHTTPService(modulename string, cfg *config.Config) {

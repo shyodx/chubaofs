@@ -16,11 +16,12 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/master"
 	"github.com/spf13/cobra"
-	"sort"
-	"strconv"
 )
 
 const (

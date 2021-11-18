@@ -16,12 +16,13 @@ package cmd
 
 import (
 	"fmt"
+	"reflect"
+	"strconv"
+
 	"github.com/chubaofs/chubaofs/cli/api"
 	"github.com/chubaofs/chubaofs/metanode"
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/spf13/cobra"
-	"reflect"
-	"strconv"
 )
 
 const (

@@ -15,13 +15,13 @@
 package master
 
 import (
-	"github.com/chubaofs/chubaofs/util/log"
 	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util"
+	"github.com/chubaofs/chubaofs/util/log"
 )
 
 // DataNode stores all the information about a data node

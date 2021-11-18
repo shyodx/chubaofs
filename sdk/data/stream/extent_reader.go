@@ -16,13 +16,14 @@ package stream
 
 import (
 	"fmt"
+	"hash/crc32"
+	"net"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/data/wrapper"
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
-	"hash/crc32"
-	"net"
 )
 
 // ExtentReader defines the struct of the extent reader.

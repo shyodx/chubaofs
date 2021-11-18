@@ -1,12 +1,13 @@
 package console
 
 import (
-	"github.com/shurcooL/vfsgen"
 	"log"
 	"net/http"
 	"path"
 	"runtime"
 	"testing"
+
+	"github.com/shurcooL/vfsgen"
 )
 
 func TestMakeHtml2GoBin(t *testing.T) {

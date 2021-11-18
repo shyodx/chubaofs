@@ -2,9 +2,10 @@ package master
 
 import (
 	"fmt"
-	"github.com/chubaofs/chubaofs/proto"
 	"testing"
 	"time"
+
+	"github.com/chubaofs/chubaofs/proto"
 )
 
 func TestMetaNode(t *testing.T) {

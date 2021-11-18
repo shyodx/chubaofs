@@ -16,12 +16,12 @@ package stream
 
 import (
 	"fmt"
-	"golang.org/x/net/context"
 	"io"
 	"sync"
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/log"
+	"golang.org/x/net/context"
 )
 
 // One inode corresponds to one streamer. All the requests to the same inode will be queued.

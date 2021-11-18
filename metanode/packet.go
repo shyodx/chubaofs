@@ -16,6 +16,7 @@ package metanode
 
 import (
 	"encoding/json"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/storage"
 )

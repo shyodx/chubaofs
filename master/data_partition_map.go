@@ -17,11 +17,12 @@ package master
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/chubaofs/chubaofs/proto"
-	"github.com/chubaofs/chubaofs/util/log"
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/chubaofs/chubaofs/proto"
+	"github.com/chubaofs/chubaofs/util/log"
 )
 
 // DataPartitionMap stores all the data partitionMap

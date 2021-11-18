@@ -15,8 +15,9 @@
 package metanode
 
 import (
-	"github.com/chubaofs/chubaofs/util/btree"
 	"sync"
+
+	"github.com/chubaofs/chubaofs/util/btree"
 )
 
 const defaultBTreeDegree = 32

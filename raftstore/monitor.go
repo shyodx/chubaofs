@@ -2,10 +2,11 @@ package raftstore
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/chubaofs/chubaofs/util/exporter"
 	"github.com/chubaofs/chubaofs/util/log"
 	"github.com/tiglabs/raft/proto"
-	"time"
 )
 
 const (

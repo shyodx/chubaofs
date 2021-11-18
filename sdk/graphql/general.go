@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"strings"
+
 	"github.com/chubaofs/chubaofs/master"
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/samsarahq/thunder/graphql"
 	"github.com/samsarahq/thunder/graphql/introspection"
-	"io/ioutil"
-	"os"
-	"strings"
 )
 
 func main() {

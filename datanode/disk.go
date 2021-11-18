@@ -17,6 +17,7 @@ package datanode
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path"
 	"regexp"
 	"strconv"
@@ -29,7 +30,6 @@ import (
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/exporter"
 	"github.com/chubaofs/chubaofs/util/log"
-	"os"
 )
 
 var (

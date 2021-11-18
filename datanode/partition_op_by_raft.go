@@ -19,14 +19,15 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net"
+	"strings"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/repl"
 	"github.com/chubaofs/chubaofs/storage"
 	"github.com/chubaofs/chubaofs/util/exporter"
 	"github.com/chubaofs/chubaofs/util/log"
 	"github.com/tiglabs/raft"
-	"net"
-	"strings"
 )
 
 type RaftCmdItem struct {

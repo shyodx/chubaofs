@@ -17,15 +17,15 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/chubaofs/chubaofs/proto"
-	"github.com/chubaofs/chubaofs/util/auth"
-	"github.com/chubaofs/chubaofs/util/cryptoutil"
-	"github.com/chubaofs/chubaofs/util/keystore"
 	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/chubaofs/chubaofs/proto"
+	"github.com/chubaofs/chubaofs/util/auth"
+	"github.com/chubaofs/chubaofs/util/cryptoutil"
+	"github.com/chubaofs/chubaofs/util/keystore"
 	"github.com/chubaofs/chubaofs/util/log"
 )
 

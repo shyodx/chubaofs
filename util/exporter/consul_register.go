@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/chubaofs/chubaofs/proto"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -26,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/log"
 )
 

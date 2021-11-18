@@ -1,10 +1,11 @@
 package console
 
 import (
+	"testing"
+
 	"github.com/chubaofs/chubaofs/master"
 	"github.com/chubaofs/chubaofs/util/config"
 	"github.com/chubaofs/chubaofs/util/log"
-	"testing"
 )
 
 func TestServer(t *testing.T) {

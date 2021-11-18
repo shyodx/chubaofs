@@ -16,9 +16,10 @@ package master
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/log"
-	"time"
 )
 
 func (c *Cluster) scheduleToCheckDiskRecoveryProgress() {

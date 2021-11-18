@@ -2,11 +2,12 @@ package cutil
 
 import (
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/graphql/client/user"
 	"github.com/google/uuid"
-	"sync"
-	"time"
 )
 
 var userTimeout int64 = 1200

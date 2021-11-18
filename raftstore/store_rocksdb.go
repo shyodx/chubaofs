@@ -16,9 +16,9 @@ package raftstore
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/tecbot/gorocksdb"
-	"os"
 )
 
 // RocksDBStore is a wrapper of the gorocksdb.DB

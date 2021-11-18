@@ -15,9 +15,10 @@
 package metanode
 
 import (
-	"github.com/chubaofs/chubaofs/proto"
 	"strings"
 	"sync"
+
+	"github.com/chubaofs/chubaofs/proto"
 )
 
 // DataPartition defines the struct of data partition that will be used on the meta node.

@@ -3,11 +3,12 @@ package master
 import (
 	"context"
 	"fmt"
+	"sort"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/log"
 	"github.com/samsarahq/thunder/graphql"
 	"github.com/samsarahq/thunder/graphql/schemabuilder"
-	"sort"
 )
 
 type UserService struct {

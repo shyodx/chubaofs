@@ -16,12 +16,12 @@ package master
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/log"
-	"math"
 )
 
 type nodeStatInfo = proto.NodeStatInfo

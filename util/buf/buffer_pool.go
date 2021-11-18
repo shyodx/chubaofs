@@ -2,12 +2,12 @@ package buf
 
 import (
 	"fmt"
-	"golang.org/x/net/context"
-	"golang.org/x/time/rate"
 	"sync"
 	"sync/atomic"
 
 	"github.com/chubaofs/chubaofs/util"
+	"golang.org/x/net/context"
+	"golang.org/x/time/rate"
 )
 
 const (

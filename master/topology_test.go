@@ -2,9 +2,10 @@ package master
 
 import (
 	"fmt"
-	"github.com/chubaofs/chubaofs/util"
 	"testing"
 	"time"
+
+	"github.com/chubaofs/chubaofs/util"
 )
 
 func createDataNodeForTopo(addr, zoneName string, ns *nodeSet) (dn *DataNode) {

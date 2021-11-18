@@ -15,20 +15,20 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	"bufio"
 	"github.com/chubaofs/chubaofs/metanode"
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/log"
-	"io"
 )
 
 const (

@@ -16,11 +16,12 @@ package master
 
 import (
 	"fmt"
+	"math"
+	"time"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/log"
-	"math"
-	"time"
 )
 
 func (partition *DataPartition) checkStatus(clusterName string, needLog bool, dpTimeOutSec int64) {

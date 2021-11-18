@@ -17,13 +17,14 @@ package stream
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/chubaofs/chubaofs/proto"
-	"github.com/chubaofs/chubaofs/sdk/data/wrapper"
-	"github.com/chubaofs/chubaofs/util"
 	"hash/crc32"
 	"io"
 	"net"
 	"time"
+
+	"github.com/chubaofs/chubaofs/proto"
+	"github.com/chubaofs/chubaofs/sdk/data/wrapper"
+	"github.com/chubaofs/chubaofs/util"
 )
 
 // Packet defines a wrapper of the packet in proto.

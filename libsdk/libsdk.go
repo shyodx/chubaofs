@@ -57,7 +57,6 @@ struct cfs_summary_info {
 import "C"
 
 import (
-	"github.com/chubaofs/chubaofs/client/fs"
 	"io"
 	"os"
 	gopath "path"
@@ -68,12 +67,12 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/willf/bitset"
-
+	"github.com/chubaofs/chubaofs/client/fs"
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/data/stream"
 	"github.com/chubaofs/chubaofs/sdk/meta"
 	"github.com/chubaofs/chubaofs/util/log"
+	"github.com/willf/bitset"
 )
 
 const (

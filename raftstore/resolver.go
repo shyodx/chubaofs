@@ -16,10 +16,11 @@ package raftstore
 
 import (
 	"fmt"
-	"github.com/chubaofs/chubaofs/util/errors"
-	"github.com/tiglabs/raft"
 	"strings"
 	"sync"
+
+	"github.com/chubaofs/chubaofs/util/errors"
+	"github.com/tiglabs/raft"
 )
 
 // Error definitions.

@@ -16,7 +16,6 @@ package stream
 
 import (
 	"fmt"
-	"golang.org/x/net/context"
 	"hash/crc32"
 	"net"
 	"sync/atomic"
@@ -28,6 +27,7 @@ import (
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
+	"golang.org/x/net/context"
 )
 
 const (

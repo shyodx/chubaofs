@@ -16,8 +16,9 @@ package objectnode
 
 import (
 	"encoding/xml"
-	"github.com/chubaofs/chubaofs/util/log"
 	"net/url"
+
+	"github.com/chubaofs/chubaofs/util/log"
 )
 
 func MarshalXMLEntity(entity interface{}) ([]byte, error) {

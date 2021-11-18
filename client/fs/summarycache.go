@@ -2,9 +2,10 @@ package fs
 
 import (
 	"container/list"
-	"github.com/chubaofs/chubaofs/proto"
 	"sync"
 	"time"
+
+	"github.com/chubaofs/chubaofs/proto"
 )
 
 const (

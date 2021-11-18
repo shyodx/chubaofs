@@ -15,9 +15,9 @@
 package metanode
 
 import (
-	"github.com/chubaofs/chubaofs/proto"
 	"net"
 
+	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
 )

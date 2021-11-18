@@ -15,9 +15,10 @@
 package datanode
 
 import (
+	"sync/atomic"
+
 	"github.com/chubaofs/chubaofs/repl"
 	"github.com/chubaofs/chubaofs/storage"
-	"sync/atomic"
 )
 
 func (s *DataNode) Post(p *repl.Packet) error {
