@@ -36,6 +36,9 @@ func (api *ClientAPI) GetVolume(volName string, authKey string) (vv *proto.VolVi
 	var request = newAPIRequest(http.MethodPost, proto.ClientVol)
 	request.addParam("name", volName)
 	request.addParam("authKey", authKey)
+	if err = api.mc.generateSignature(request); err != nil {
+		return
+	}
 	var data []byte
 	if data, err = api.mc.serveRequest(request); err != nil {
 		return
@@ -51,6 +54,9 @@ func (api *ClientAPI) GetVolumeWithoutAuthKey(volName string) (vv *proto.VolView
 	var request = newAPIRequest(http.MethodPost, proto.ClientVol)
 	request.addParam("name", volName)
 	request.addHeader(proto.SkipOwnerValidation, strconv.FormatBool(true))
+	if err = api.mc.generateSignature(request); err != nil {
+		return
+	}
 	var data []byte
 	if data, err = api.mc.serveRequest(request); err != nil {
 		return

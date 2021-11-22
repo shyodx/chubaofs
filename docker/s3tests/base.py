@@ -19,6 +19,7 @@ import json
 import random
 import requests
 import time
+import hmac
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from unittest2 import TestCase
@@ -108,8 +109,27 @@ def get_env_s3_client(signature_version='s3v4'):
 
 
 def get_env_s3_client_volume_credential(signature_version='s3v4'):
+    # read ~/.cfs-cli.json first to get AK/SK of user
+    f = open("/root/.cfs-cli.json", "r")
+    file_content = f.read()
+    f.close()
+    content = json.loads(file_content)
+    users = content['users']
+    user_id = users[0]['userID']
+    user_ak = users[0]['accessKey']
+    user_sk = users[0]['secretKey']
+
+    # generate signature
+    msg = '/client/vol'.encode('utf-8')
+    key = user_ak.encode('utf-8')
+    msg = hmac.new(key, msg, hashlib.sha256).digest()
+    key = user_sk.encode('utf-8')
+    sign = hmac.new(key, msg, hashlib.sha256).hexdigest()
+    sign_json = '{"UserID":"%s","Signature":"%s"}' % (user_id, sign)
+
+    # request volume view
     resp = requests.get(
-        url=env.MASTER + '/client/vol?name=%s' % env.BUCKET,
+        url=env.MASTER + '/client/vol?name=%s&signature=[%s]' % (env.BUCKET, sign_json),
         headers={
             'Skip-Owner-Validation': 'true'
         })
