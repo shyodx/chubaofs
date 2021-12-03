@@ -31,11 +31,14 @@ type FilterFunc func(signs []*proto.AuthSignature, item interface{}) AuthHandle
 type ModifyFunc func(item interface{}) interface{}
 
 func (m *Server) parseSignatures(r *http.Request) (signs []*proto.AuthSignature, err error) {
-	if err = r.ParseForm(); err != nil {
-		return
+	signature := r.Header.Get(signatureHeaderKey)
+	if signature == "" {
+		if err = r.ParseForm(); err != nil {
+			return
+		}
+		signature = r.FormValue(signatureKey)
 	}
 
-	signature := r.FormValue(signatureKey)
 	if signature == "" {
 		return
 	}

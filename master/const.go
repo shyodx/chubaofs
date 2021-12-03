@@ -53,6 +53,7 @@ const (
 	dpSelectorNameKey       = "dpSelectorName"
 	dpSelectorParmKey       = "dpSelectorParm"
 	signatureKey            = "signature"
+	signatureHeaderKey      = "X-CBFS-Signature"
 )
 
 const (

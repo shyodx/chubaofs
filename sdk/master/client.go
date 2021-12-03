@@ -202,7 +202,7 @@ func (c *MasterClient) generateSignature(r *request) (err error) {
 		return
 	}
 
-	r.addParam("signature", string(signature[:]))
+	r.addHeader("X-CBFS-Signature", string(signature[:]))
 	return
 }
 
