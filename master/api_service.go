@@ -1976,7 +1976,6 @@ func (m *Server) getVol(w http.ResponseWriter, r *http.Request) {
 		ticket  cryptoutil.Ticket
 		ts      int64
 		param   *getVolParameter
-		signs   []*proto.AuthSignature
 	)
 	if param, err = parseGetVolParameter(r); err != nil {
 		sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
@@ -1985,16 +1984,6 @@ func (m *Server) getVol(w http.ResponseWriter, r *http.Request) {
 	if vol, err = m.cluster.getVol(param.name); err != nil {
 		sendErrReply(w, r, newErrHTTPReply(proto.ErrVolNotExists))
 		return
-	}
-	if !vol.authenticate && m.enableSimpleAuth() {
-		if signs, err = m.parseSignatures(r); err != nil {
-			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeParamError, Msg: err.Error()})
-			return
-		}
-		if err = m.verifySignatures(signs, r.URL.EscapedPath(), param.name, AuthAccessorPermission); err != nil {
-			sendErrReply(w, r, &proto.HTTPReply{Code: proto.ErrCodeNoPermission, Msg: err.Error()})
-			return
-		}
 	}
 	if !param.skipOwnerValidation && !matchKey(vol.Owner, param.authKey) {
 		sendErrReply(w, r, newErrHTTPReply(proto.ErrVolAuthKeyNotMatch))
