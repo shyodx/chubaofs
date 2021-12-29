@@ -443,8 +443,9 @@ func startDaemon() error {
 func waitListenAndServe(statusCh chan error, addr string, handler http.Handler) {
 	var err error
 	var loop int = 0
-	var interval int = 1000
+	var interval int = (1 << 17) - 1
 	var listener net.Listener
+	var dynamicPort bool
 
 	if addr == ":" {
 		addr = ":0"
@@ -459,7 +460,7 @@ func waitListenAndServe(statusCh chan error, addr string, handler http.Handler) 
 
 		// addr is not released for use
 		if strings.Contains(err.Error(), "bind: address already in use") {
-			if loop%interval == 0 {
+			if loop&interval == 0 {
 				syslog.Printf("address %v is still in use\n", addr)
 			}
 			runtime.Gosched()
@@ -467,19 +468,37 @@ func waitListenAndServe(statusCh chan error, addr string, handler http.Handler) 
 			break
 		}
 		if time.Now().After(timeout) {
-			syslog.Printf("Fatal: address %v is still in use after timeout\n", addr)
+			msg := fmt.Sprintf("address %v is still in use after "+
+				"timeout, choose port automatically\n", addr)
+			syslog.Print(msg)
+			msg = "Warning: " + msg
+			daemonize.StatusWriter.Write([]byte(msg))
+			dynamicPort = true
 			break
 		}
 		loop++
 	}
 	syslog.Printf("address %v wait loop %v\n", addr, loop)
+
+	if dynamicPort {
+		ipport := strings.Split(addr, ":")
+		addr = ipport[0] + ":0"
+		listener, err = net.Listen("tcp", addr)
+	}
+
 	if err != nil {
 		statusCh <- err
 		return
 	}
 
 	statusCh <- nil
-	syslog.Println("Start pprof with port:", listener.Addr().(*net.TCPAddr).Port)
+	msg := fmt.Sprintf("Start pprof with port: %v\n",
+		listener.Addr().(*net.TCPAddr).Port)
+	syslog.Print(msg)
+	if dynamicPort {
+		msg = "Warning: " + msg
+		daemonize.StatusWriter.Write([]byte(msg))
+	}
 	http.Serve(listener, handler)
 	// unreachable
 }
