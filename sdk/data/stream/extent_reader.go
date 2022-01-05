@@ -16,13 +16,15 @@ package stream
 
 import (
 	"fmt"
+	"hash/crc32"
+	"net"
+	"time"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/data/wrapper"
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
-	"hash/crc32"
-	"net"
 )
 
 // ExtentReader defines the struct of the extent reader.
@@ -57,7 +59,8 @@ func (reader *ExtentReader) Read(req *ExtentRequest) (readBytes int, err error) 
 	reqPacket := NewReadPacket(reader.key, offset, size, reader.inode, req.FileOffset, reader.followerRead)
 	sc := NewStreamConn(reader.dp, reader.followerRead)
 
-	log.LogDebugf("ExtentReader Read enter: size(%v) req(%v) reqPacket(%v)", size, req, reqPacket)
+	_s := time.Now().UnixNano()
+	log.LogDebugf("ExtentReader Read enter: size(%v) req(%v) reqPacket(%v) time %v", size, req, reqPacket, _s)
 
 	err = sc.Send(reqPacket, func(conn *net.TCPConn) (error, bool) {
 		readBytes = 0
@@ -94,7 +97,7 @@ func (reader *ExtentReader) Read(req *ExtentRequest) (readBytes int, err error) 
 		log.LogErrorf("Extent Reader Read: err(%v) req(%v) reqPacket(%v)", err, req, reqPacket)
 	}
 
-	log.LogDebugf("ExtentReader Read exit: req(%v) reqPacket(%v) readBytes(%v) err(%v)", req, reqPacket, readBytes, err)
+	log.LogDebugf("ExtentReader Read exit: req(%v) reqPacket(%v) readBytes(%v) err(%v) end(%v)", req, reqPacket, readBytes, err, time.Now().UnixNano())
 	return
 }
 
