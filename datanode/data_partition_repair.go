@@ -16,20 +16,22 @@ package datanode
 
 import (
 	"encoding/json"
-	"github.com/chubaofs/chubaofs/util"
 	"math"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/chubaofs/chubaofs/util"
+
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/repl"
 	"github.com/chubaofs/chubaofs/storage"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
-	"hash/crc32"
 )
 
 // DataPartitionRepairTask defines the reapir task for the data partition.
@@ -555,7 +557,7 @@ func (dp *DataPartition) streamRepairExtent(remoteExtentInfo *storage.ExtentInfo
 			" remoteSize(%v)localSize(%v) reply(%v).", dp.partitionID, localExtentInfo.FileID, remoteExtentInfo.String(),
 			remoteExtentInfo.Size, currFixOffset, reply.GetUniqueLogId()))
 		actualCrc := crc32.ChecksumIEEE(reply.Data[:reply.Size])
-		if reply.CRC != crc32.ChecksumIEEE(reply.Data[:reply.Size]) {
+		if reply.CRC != 0 && reply.CRC != crc32.ChecksumIEEE(reply.Data[:reply.Size]) {
 			err = fmt.Errorf("streamRepairExtent crc mismatch expectCrc(%v) actualCrc(%v) extent(%v_%v) start fix from (%v)"+
 				" remoteSize(%v) localSize(%v) request(%v) reply(%v) ", reply.CRC, actualCrc, dp.partitionID, remoteExtentInfo.String(),
 				remoteExtentInfo.Source, remoteExtentInfo.Size, currFixOffset, request.GetUniqueLogId(), reply.GetUniqueLogId())

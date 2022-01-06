@@ -558,7 +558,7 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 		err = nil
 		reply := repl.NewStreamReadResponsePacket(p.ReqID, p.PartitionID, p.ExtentID)
 		reply.StartT = p.StartT
-		currReadSize := uint32(util.Min(int(needReplySize), 65536))
+		currReadSize := uint32(util.Min(int(needReplySize), util.BlockSize))
 
 		tpObject := exporter.NewTPCnt(fmt.Sprintf("Repair_%s", p.GetOpMsg()))
 		reply.ExtentOffset = offset
@@ -567,7 +567,7 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 		partitionIOMetric := exporter.NewTPCnt(MetricPartitionIOName)
 
 		// try splice first
-		if needReplySize < 4096 {
+		if !isRepairRead || needReplySize < 4096 {
 			if _, ok := connect.(*net.TCPConn); ok {
 				var rpipe, wpipe *os.File
 				var netFile *os.File
@@ -585,6 +585,13 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 				}
 				defer rpipe.Close()
 				defer wpipe.Close()
+				if currReadSize > 65536 {
+					_, _, err = syscall.Syscall(syscall.SYS_FCNTL, wpipe.Fd(), syscall.F_SETPIPE_SZ, util.BlockSize)
+					if err != nil {
+						log.LogErrorf("Failed to change pipe size: %v", err)
+						currReadSize = 65536
+					}
+				}
 				if extFile, err = store.GetExtentFile(p.ExtentID, offset, int64(currReadSize)); err != nil {
 					log.LogErrorf("Get extent file error: %v", err)
 					goto read_send
