@@ -578,7 +578,7 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 					SPLICE_F_MOVE int = 0x1
 					SPLICE_F_MORE int = 0x4
 				)
-				log.LogErrorf("req(%v) do splice size %v loop %v", p, currReadSize, loop)
+				//log.LogErrorf("req(%v) do splice size %v loop %v", p, currReadSize, loop)
 				if rpipe, wpipe, err = os.Pipe(); err != nil {
 					log.LogErrorf("Create pipe fail: %v\n", err)
 					goto read_send
@@ -590,7 +590,7 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 					goto read_send
 				}
 				defer extFile.Close()
-				log.LogErrorf("Get extent file(%v) offs %v read to pipe", extFile.Name(), in_offs)
+				//log.LogErrorf("Get extent file(%v) offs %v read to pipe", extFile.Name(), in_offs)
 				n, err = syscall.Splice(int(extFile.Fd()), &in_offs, int(wpipe.Fd()), nil, int(currReadSize), SPLICE_F_MOVE)
 				if n != int64(currReadSize) || err != nil {
 					log.LogErrorf("Splice from extent file n %v error %v", n, err)
@@ -601,7 +601,7 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 				reply.Opcode = p.Opcode
 				p.ResultCode = proto.OpOk
 				reply.CRC = 0
-				log.LogErrorf("write hdr and args")
+				//log.LogErrorf("write hdr and args")
 				if err = reply.WriteHdrAndArgsToConn(connect); err != nil {
 					log.LogErrorf("Write hdr and args fail: %v", err)
 					goto read_send
@@ -613,22 +613,22 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 				}
 
 				defer netFile.Close()
-				log.LogErrorf("Get net file(%v) read from pipe", netFile.Name())
+				//log.LogErrorf("Get net file(%v) read from pipe", netFile.Name())
 				n, err = syscall.Splice(int(rpipe.Fd()), nil, int(netFile.Fd()), nil, int(currReadSize), SPLICE_F_MORE)
-				log.LogErrorf("Splice to net file n %v error %v", n, err)
+				//log.LogErrorf("Splice to net file n %v error %v", n, err)
 				if err != nil || n != int64(currReadSize) {
 					err = fmt.Errorf("n %v currReadSize %v", n, currReadSize)
 					log.LogErrorf("n %v currReadSize %v", n, currReadSize)
 				}
 
 				goto out
-			} else {
+			} /*else {
 				log.LogErrorf("not TCPConn req(%v) do splice size %v loop %v", p, currReadSize, loop)
-			}
+			}*/
 		}
 
 	read_send:
-		log.LogErrorf("original read req(%v) size %v loop %v", p, currReadSize, loop)
+		//log.LogErrorf("original read req(%v) size %v loop %v", p, currReadSize, loop)
 		currReadSize = uint32(util.Min(int(needReplySize), util.ReadBlockSize))
 		if currReadSize == util.ReadBlockSize {
 			reply.Data, _ = proto.Buffers.Get(util.ReadBlockSize)

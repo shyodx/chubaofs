@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"net"
-	"time"
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/data/wrapper"
@@ -59,8 +58,7 @@ func (reader *ExtentReader) Read(req *ExtentRequest) (readBytes int, err error) 
 	reqPacket := NewReadPacket(reader.key, offset, size, reader.inode, req.FileOffset, reader.followerRead)
 	sc := NewStreamConn(reader.dp, reader.followerRead)
 
-	_s := time.Now().UnixNano()
-	log.LogDebugf("ExtentReader Read enter: size(%v) req(%v) reqPacket(%v) time %v", size, req, reqPacket, _s)
+	log.LogDebugf("ExtentReader Read enter: size(%v) req(%v) reqPacket(%v)", size, req, reqPacket)
 
 	loop := 0
 	err = sc.Send(reqPacket, func(conn *net.TCPConn) (error, bool) {
@@ -99,7 +97,7 @@ func (reader *ExtentReader) Read(req *ExtentRequest) (readBytes int, err error) 
 		log.LogErrorf("Extent Reader Read: err(%v) req(%v) reqPacket(%v)", err, req, reqPacket)
 	}
 
-	log.LogDebugf("ExtentReader Read exit: req(%v) reqPacket(%v) readBytes(%v) err(%v) loop(%v) end(%v)", req, reqPacket, readBytes, err, loop, time.Now().UnixNano())
+	log.LogDebugf("ExtentReader Read exit: req(%v) reqPacket(%v) readBytes(%v) err(%v)", req, reqPacket, readBytes, err)
 	return
 }
 

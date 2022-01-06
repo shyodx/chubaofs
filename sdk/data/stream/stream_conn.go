@@ -116,8 +116,6 @@ func (sc *StreamConn) Send(req *Packet, getReply GetReplyFunc) (err error) {
 }
 
 func (sc *StreamConn) sendToPartition(req *Packet, getReply GetReplyFunc) (err error) {
-	_s1 := time.Now().UnixNano()
-	log.LogDebugf("sendToPartition: req(%v) get conntion start %v", req, _s1)
 	conn, err := StreamConnPool.GetConnect(sc.currAddr)
 	if err == nil {
 		err = sc.sendToConn(conn, req, getReply)
@@ -161,8 +159,7 @@ func (sc *StreamConn) sendToPartition(req *Packet, getReply GetReplyFunc) (err e
 
 func (sc *StreamConn) sendToConn(conn *net.TCPConn, req *Packet, getReply GetReplyFunc) (err error) {
 	for i := 0; i < StreamSendMaxRetry; i++ {
-		_s1 := time.Now().UnixNano()
-		log.LogDebugf("sendToConn: send to addr(%v), reqPacket(%v) start %v", sc.currAddr, req, _s1)
+		log.LogDebugf("sendToConn: send to addr(%v), reqPacket(%v)", sc.currAddr, req)
 		err = req.WriteToConn(conn)
 		if err != nil {
 			msg := fmt.Sprintf("sendToConn: failed to write to addr(%v) err(%v)", sc.currAddr, err)
@@ -171,8 +168,6 @@ func (sc *StreamConn) sendToConn(conn *net.TCPConn, req *Packet, getReply GetRep
 		}
 
 		var again bool
-		_s2 := time.Now().UnixNano()
-		log.LogDebugf("sendToConn: get reply from addr(%v), reqPacket(%v) start %v", sc.currAddr, req, _s2)
 		err, again = getReply(conn)
 		if !again {
 			if err != nil {
@@ -181,11 +176,11 @@ func (sc *StreamConn) sendToConn(conn *net.TCPConn, req *Packet, getReply GetRep
 			break
 		}
 
-		log.LogWarnf("sendToConn: getReply error and will RETRY, sc(%v) err(%v) end %v", sc, err, time.Now().UnixNano())
+		log.LogWarnf("sendToConn: getReply error and will RETRY, sc(%v) err(%v)", sc, err)
 		time.Sleep(StreamSendSleepInterval)
 	}
 
-	log.LogDebugf("sendToConn exit: send to addr(%v) reqPacket(%v) err(%v) end %v", sc.currAddr, req, err, time.Now().UnixNano())
+	log.LogDebugf("sendToConn exit: send to addr(%v) reqPacket(%v) err(%v)", sc.currAddr, req, err)
 	return
 }
 
