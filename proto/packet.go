@@ -536,6 +536,24 @@ func (p *Packet) WriteToConn(c net.Conn) (err error) {
 	return
 }
 
+func (p *Packet) WriteHdrAndArgsToConn(c net.Conn) (err error) {
+	c.SetWriteDeadline(time.Now().Add(WriteDeadlineTime * time.Second))
+	header, err := Buffers.Get(util.PacketHeaderSize)
+	if err != nil {
+		header = make([]byte, util.PacketHeaderSize)
+	}
+	defer Buffers.Put(header)
+
+	p.MarshalHeader(header)
+	if _, err = c.Write(header); err != nil {
+		return
+	}
+	if _, err = c.Write(p.Arg[:int(p.ArgLen)]); err != nil {
+		return
+	}
+	return
+}
+
 // ReadFull is a wrapper function of io.ReadFull.
 func ReadFull(c net.Conn, buf *[]byte, readSize int) (err error) {
 	*buf = make([]byte, readSize)

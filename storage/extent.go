@@ -82,6 +82,10 @@ func NewExtentInCore(name string, extentID uint64) *Extent {
 	return e
 }
 
+func (e *Extent) File() *os.File {
+	return e.file
+}
+
 func (e *Extent) HasClosed() bool {
 	return atomic.LoadInt32(&e.hasClose) == ExtentHasClose
 }

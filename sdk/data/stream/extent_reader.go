@@ -62,6 +62,7 @@ func (reader *ExtentReader) Read(req *ExtentRequest) (readBytes int, err error) 
 	_s := time.Now().UnixNano()
 	log.LogDebugf("ExtentReader Read enter: size(%v) req(%v) reqPacket(%v) time %v", size, req, reqPacket, _s)
 
+	loop := 0
 	err = sc.Send(reqPacket, func(conn *net.TCPConn) (error, bool) {
 		readBytes = 0
 		for readBytes < size {
@@ -89,6 +90,7 @@ func (reader *ExtentReader) Read(req *ExtentRequest) (readBytes int, err error) 
 			}
 
 			readBytes += int(replyPacket.Size)
+			loop++
 		}
 		return nil, false
 	})
@@ -97,7 +99,7 @@ func (reader *ExtentReader) Read(req *ExtentRequest) (readBytes int, err error) 
 		log.LogErrorf("Extent Reader Read: err(%v) req(%v) reqPacket(%v)", err, req, reqPacket)
 	}
 
-	log.LogDebugf("ExtentReader Read exit: req(%v) reqPacket(%v) readBytes(%v) err(%v) end(%v)", req, reqPacket, readBytes, err, time.Now().UnixNano())
+	log.LogDebugf("ExtentReader Read exit: req(%v) reqPacket(%v) readBytes(%v) err(%v) loop(%v) end(%v)", req, reqPacket, readBytes, err, loop, time.Now().UnixNano())
 	return
 }
 
@@ -120,7 +122,7 @@ func (reader *ExtentReader) checkStreamReply(request *Packet, reply *Packet) (er
 		return
 	}
 	expectCrc := crc32.ChecksumIEEE(reply.Data[:reply.Size])
-	if reply.CRC != expectCrc {
+	if reply.CRC != 0 && reply.CRC != expectCrc {
 		err = errors.New(fmt.Sprintf("checkStreamReply: inconsistent CRC, expectCRC(%v) replyCRC(%v)", expectCrc, reply.CRC))
 		return
 	}
