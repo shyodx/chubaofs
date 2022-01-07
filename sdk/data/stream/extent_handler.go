@@ -243,6 +243,8 @@ func (eh *ExtentHandler) sender() {
 			packet.RemainingFollowers = uint8(len(eh.dp.Hosts) - 1)
 			packet.StartT = time.Now().UnixNano()
 
+			eh.dp.InvalidateCache(uint64(eh.extID))
+
 			//log.LogDebugf("ExtentHandler sender: extent allocated, eh(%v) dp(%v) extID(%v) packet(%v)", eh, eh.dp, eh.extID, packet.GetUniqueLogId())
 
 			if err = packet.writeToConn(eh.conn); err != nil {

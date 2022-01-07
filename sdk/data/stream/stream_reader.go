@@ -16,9 +16,10 @@ package stream
 
 import (
 	"fmt"
-	"golang.org/x/net/context"
 	"io"
 	"sync"
+
+	"golang.org/x/net/context"
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/log"
@@ -145,7 +146,11 @@ func (s *Streamer) read(data []byte, offset int, size int) (total int, err error
 			if err != nil {
 				break
 			}
-			readBytes, err = reader.Read(req)
+			readBytes = reader.ReadFromCache(req)
+			if readBytes == 0 {
+				log.LogErrorf("Stream read: ino(%v) req(%v)", s.inode, req)
+				readBytes, err = reader.Read(req)
+			}
 			log.LogDebugf("Stream read: ino(%v) req(%v) readBytes(%v) err(%v)", s.inode, req, readBytes, err)
 			total += readBytes
 			if err != nil || readBytes < req.Size {

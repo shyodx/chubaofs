@@ -343,6 +343,7 @@ func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool) (total int, err 
 		return
 	}
 
+	dp.InvalidateCache(req.ExtentKey.ExtentId)
 	sc := NewStreamConn(dp, false)
 
 	for total < size {

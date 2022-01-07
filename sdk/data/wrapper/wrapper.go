@@ -190,6 +190,7 @@ func (w *Wrapper) updateDataPartition(isInit bool) (err error) {
 		return &DataPartition{
 			DataPartitionResponse: *response,
 			ClientWrapper:         w,
+			ExtFileLRU:            NewExtentFileLRU(response.PartitionID),
 		}
 	}
 
@@ -306,4 +307,25 @@ func distanceFromLocal(b string) int {
 	remote := strings.Split(b, ":")[0]
 
 	return iputil.GetDistance(net.ParseIP(LocalIP), net.ParseIP(remote))
+}
+
+func (w *Wrapper) GetDataPartitionExtentChunksStat() []*ExtentFileStat {
+	array := make([]*ExtentFileStat, 0)
+
+	for partID, dp := range w.partitions {
+		stat := &ExtentFileStat{
+			PartID:     partID,
+			Count:      dp.ExtFileLRU.head.Len(),
+			Create:     dp.ExtFileLRU.create,
+			Overwrite:  dp.ExtFileLRU.overwrite,
+			Hit:        dp.ExtFileLRU.hit,
+			Miss:       dp.ExtFileLRU.miss,
+			Tiny:       dp.ExtFileLRU.tiny,
+			Expired:    dp.ExtFileLRU.expired,
+			Outofrange: dp.ExtFileLRU.outofrange,
+		}
+		array = append(array, stat)
+	}
+
+	return array
 }

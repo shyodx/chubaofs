@@ -338,3 +338,8 @@ func (s *Super) Notify(stat fs.FSStatType, msg interface{}) {
 		s.fslock.Unlock()
 	}
 }
+
+func (s *Super) GetStatistics(w http.ResponseWriter, r *http.Request) {
+	stat := s.ec.GetStat()
+	replySucc(w, r, stat)
+}

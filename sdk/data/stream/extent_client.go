@@ -16,6 +16,7 @@ package stream
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -343,4 +344,35 @@ func (client *ExtentClient) Close() error {
 	}
 	client.dataWrapper.Stop()
 	return nil
+}
+
+type sortedExtentFileStat []*wrapper.ExtentFileStat
+
+func (s sortedExtentFileStat) Len() int {
+	return len(s)
+}
+
+func (s sortedExtentFileStat) Less(i, j int) bool {
+	return s[i].PartID < s[j].PartID
+}
+
+func (s sortedExtentFileStat) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func (client *ExtentClient) GetStat() string {
+	dw := client.dataWrapper
+	dw.RLock()
+	stats := dw.GetDataPartitionExtentChunksStat()
+	dw.RUnlock()
+
+	sorted := sortedExtentFileStat(stats)
+	sort.Sort(sorted)
+	str := ""
+	for _, s := range sorted {
+		str += fmt.Sprintf("Partition:%v\tChunks:%v\tCreate:%v/%v\tHit:%v\tMiss:%v\tTiny:%v\tExpired:%v\tOutOfRange:%v\n",
+			s.PartID, s.Count, s.Create, s.Overwrite, s.Hit, s.Miss, s.Tiny, s.Expired, s.Outofrange)
+	}
+
+	return str
 }

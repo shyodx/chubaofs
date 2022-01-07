@@ -16,13 +16,15 @@ package stream
 
 import (
 	"fmt"
+	"hash/crc32"
+	"net"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/data/wrapper"
+	"github.com/chubaofs/chubaofs/storage"
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
-	"hash/crc32"
-	"net"
 )
 
 // ExtentReader defines the struct of the extent reader.
@@ -47,6 +49,55 @@ func NewExtentReader(inode uint64, key *proto.ExtentKey, dp *wrapper.DataPartiti
 func (reader *ExtentReader) String() (m string) {
 	return fmt.Sprintf("inode (%v) extentKey(%v)", reader.inode,
 		reader.key.Marshal())
+}
+
+func (reader *ExtentReader) ReadFromCache(req *ExtentRequest) (n int) {
+	lru := reader.dp.ExtFileLRU
+
+	log.LogErrorf("ReadFromCache: req(%v)", req)
+	if storage.IsTinyExtent(req.ExtentKey.ExtentId) {
+		lru.IncCount(wrapper.LRUTiny)
+		return
+	}
+
+	offset := req.FileOffset - int(reader.key.FileOffset) + int(reader.key.ExtentOffset)
+	efc := lru.Lookup(req.ExtentKey.ExtentId, offset, req.Size)
+	if efc == nil {
+		go reader.ReadToCache(req)
+		return
+	}
+
+	n = efc.TryReadData(req.Data, offset, req.Size)
+	return
+}
+
+func (reader *ExtentReader) ReadToCache(prevReq *ExtentRequest) {
+	lru := reader.dp.ExtFileLRU
+	if lru.Congested() {
+		return
+	}
+	offs := prevReq.FileOffset - int(reader.key.FileOffset) + int(reader.key.ExtentOffset)
+	// read range: [offs, roundup(offs+size+128k, 128k)]
+	end := (offs + prevReq.Size + util.BlockSize + util.BlockSize - 1) / util.BlockSize * util.BlockSize
+	size := end - offs
+
+	fileOffs := offs + int(reader.key.FileOffset) - int(reader.key.ExtentOffset)
+	newReq := &ExtentRequest{
+		FileOffset: fileOffs,
+		Size:       size,
+		Data:       make([]byte, size),
+		ExtentKey:  prevReq.ExtentKey,
+	}
+
+	log.LogErrorf("ReadToCache: new req(%v)", newReq)
+	n, err := reader.Read(newReq)
+	if err != nil {
+		log.LogErrorf("ReadToCache req %v fail: %v", newReq, err)
+		return
+	}
+	log.LogErrorf("new req: %v read %v bytes", newReq, n)
+
+	lru.Create(newReq.ExtentKey.ExtentId, offs, n, newReq.Data[:n])
 }
 
 // Read reads the extent request.
