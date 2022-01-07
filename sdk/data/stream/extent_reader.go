@@ -16,14 +16,13 @@ package stream
 
 import (
 	"fmt"
-	"hash/crc32"
-	"net"
-
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/data/wrapper"
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
+	"hash/crc32"
+	"net"
 )
 
 // ExtentReader defines the struct of the extent reader.
@@ -60,7 +59,6 @@ func (reader *ExtentReader) Read(req *ExtentRequest) (readBytes int, err error) 
 
 	log.LogDebugf("ExtentReader Read enter: size(%v) req(%v) reqPacket(%v)", size, req, reqPacket)
 
-	loop := 0
 	err = sc.Send(reqPacket, func(conn *net.TCPConn) (error, bool) {
 		readBytes = 0
 		for readBytes < size {
@@ -88,7 +86,6 @@ func (reader *ExtentReader) Read(req *ExtentRequest) (readBytes int, err error) 
 			}
 
 			readBytes += int(replyPacket.Size)
-			loop++
 		}
 		return nil, false
 	})
@@ -120,7 +117,7 @@ func (reader *ExtentReader) checkStreamReply(request *Packet, reply *Packet) (er
 		return
 	}
 	expectCrc := crc32.ChecksumIEEE(reply.Data[:reply.Size])
-	if reply.CRC != 0 && reply.CRC != expectCrc {
+	if reply.CRC != expectCrc {
 		err = errors.New(fmt.Sprintf("checkStreamReply: inconsistent CRC, expectCRC(%v) replyCRC(%v)", expectCrc, reply.CRC))
 		return
 	}

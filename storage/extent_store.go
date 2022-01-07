@@ -358,27 +358,6 @@ func (s *ExtentStore) Read(extentID uint64, offset, size int64, nbuf []byte, isR
 	return
 }
 
-func (s *ExtentStore) GetExtentFile(extID uint64, offset, size int64) (file *os.File, err error) {
-	var e *Extent
-	s.eiMutex.RLock()
-	ei := s.extentInfoMap[extID]
-	s.eiMutex.RUnlock()
-	if e, err = s.extentWithHeader(ei); err != nil {
-		return
-	}
-	if err = s.checkOffsetAndSize(extID, offset, size); err != nil {
-		return
-	}
-
-	var newFd int
-	if newFd, err = syscall.Dup(int(e.file.Fd())); err != nil {
-		return
-	}
-
-	file = os.NewFile(uintptr(newFd), e.file.Name())
-	return
-}
-
 func (s *ExtentStore) tinyDelete(extentID uint64, offset, size int64) (err error) {
 	e, err := s.extentWithHeaderByExtentID(extentID)
 	if err != nil {

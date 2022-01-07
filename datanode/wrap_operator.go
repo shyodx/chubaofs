@@ -20,9 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
-	"syscall"
 	"time"
 
 	"hash/crc32"
@@ -549,106 +547,31 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 	offset := p.ExtentOffset
 	store := partition.ExtentStore()
 	metricPartitionIOLabels := GetIoMetricLabels(partition, "read")
-	loop := 0
 	for {
-		loop++
 		if needReplySize <= 0 {
 			break
 		}
 		err = nil
 		reply := repl.NewStreamReadResponsePacket(p.ReqID, p.PartitionID, p.ExtentID)
 		reply.StartT = p.StartT
-		currReadSize := uint32(util.Min(int(needReplySize), util.BlockSize))
-
-		tpObject := exporter.NewTPCnt(fmt.Sprintf("Repair_%s", p.GetOpMsg()))
-		reply.ExtentOffset = offset
-		p.Size = uint32(currReadSize)
-		p.ExtentOffset = offset
-		partitionIOMetric := exporter.NewTPCnt(MetricPartitionIOName)
-
-		// try splice first
-		if !isRepairRead || needReplySize < 4096 {
-			if _, ok := connect.(*net.TCPConn); ok {
-				var rpipe, wpipe *os.File
-				var netFile *os.File
-				var extFile *os.File
-				var n int64
-				var in_offs int64 = offset
-				var (
-					SPLICE_F_MOVE int = 0x1
-					SPLICE_F_MORE int = 0x4
-				)
-				//log.LogErrorf("req(%v) do splice size %v loop %v", p, currReadSize, loop)
-				if rpipe, wpipe, err = os.Pipe(); err != nil {
-					log.LogErrorf("Create pipe fail: %v\n", err)
-					goto read_send
-				}
-				defer rpipe.Close()
-				defer wpipe.Close()
-				if currReadSize > 65536 {
-					_, _, err = syscall.Syscall(syscall.SYS_FCNTL, wpipe.Fd(), syscall.F_SETPIPE_SZ, util.BlockSize)
-					if err != nil {
-						log.LogErrorf("Failed to change pipe size: %v", err)
-						currReadSize = 65536
-					}
-				}
-				if extFile, err = store.GetExtentFile(p.ExtentID, offset, int64(currReadSize)); err != nil {
-					log.LogErrorf("Get extent file error: %v", err)
-					goto read_send
-				}
-				defer extFile.Close()
-				//log.LogErrorf("Get extent file(%v) offs %v read to pipe", extFile.Name(), in_offs)
-				n, err = syscall.Splice(int(extFile.Fd()), &in_offs, int(wpipe.Fd()), nil, int(currReadSize), SPLICE_F_MOVE)
-				if n != int64(currReadSize) || err != nil {
-					log.LogErrorf("Splice from extent file n %v error %v", n, err)
-					goto read_send
-				}
-				reply.Size = uint32(currReadSize)
-				reply.ResultCode = proto.OpOk
-				reply.Opcode = p.Opcode
-				p.ResultCode = proto.OpOk
-				reply.CRC = 0
-				//log.LogErrorf("write hdr and args")
-				if err = reply.WriteHdrAndArgsToConn(connect); err != nil {
-					log.LogErrorf("Write hdr and args fail: %v", err)
-					goto read_send
-				}
-				tcp := connect.(*net.TCPConn)
-				if netFile, err = tcp.File(); err != nil {
-					log.LogErrorf("Dup net file fail: %v", err)
-					goto read_send
-				}
-
-				defer netFile.Close()
-				//log.LogErrorf("Get net file(%v) read from pipe", netFile.Name())
-				n, err = syscall.Splice(int(rpipe.Fd()), nil, int(netFile.Fd()), nil, int(currReadSize), SPLICE_F_MORE)
-				//log.LogErrorf("Splice to net file n %v error %v", n, err)
-				if err != nil || n != int64(currReadSize) {
-					err = fmt.Errorf("n %v currReadSize %v", n, currReadSize)
-					log.LogErrorf("n %v currReadSize %v", n, currReadSize)
-				}
-
-				goto out
-			} /*else {
-				log.LogErrorf("not TCPConn req(%v) do splice size %v loop %v", p, currReadSize, loop)
-			}*/
-		}
-
-	read_send:
-		//log.LogErrorf("original read req(%v) size %v loop %v", p, currReadSize, loop)
-		currReadSize = uint32(util.Min(int(needReplySize), util.ReadBlockSize))
+		currReadSize := uint32(util.Min(int(needReplySize), util.ReadBlockSize))
 		if currReadSize == util.ReadBlockSize {
 			reply.Data, _ = proto.Buffers.Get(util.ReadBlockSize)
 		} else {
 			reply.Data = make([]byte, currReadSize)
 		}
+		tpObject := exporter.NewTPCnt(fmt.Sprintf("Repair_%s", p.GetOpMsg()))
+		reply.ExtentOffset = offset
+		p.Size = uint32(currReadSize)
+		p.ExtentOffset = offset
+		partitionIOMetric := exporter.NewTPCnt(MetricPartitionIOName)
 		reply.CRC, err = store.Read(reply.ExtentID, offset, int64(currReadSize), reply.Data, isRepairRead)
+		s.metrics.MetricIOBytes.AddWithLabels(int64(p.Size), metricPartitionIOLabels)
+		partitionIOMetric.SetWithLabels(err, metricPartitionIOLabels)
+		partition.checkIsDiskError(err)
+		tpObject.Set(err)
+		p.CRC = reply.CRC
 		if err != nil {
-			log.LogErrorf("Failed to read extentID:%v offset:%v size:%v err:%v", reply.ExtentID, offset, currReadSize, err)
-			partitionIOMetric.SetWithLabels(err, metricPartitionIOLabels)
-			partition.checkIsDiskError(err)
-			tpObject.Set(err)
-			p.CRC = reply.CRC
 			return
 		}
 		reply.Size = uint32(currReadSize)
@@ -656,21 +579,13 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 		reply.Opcode = p.Opcode
 		p.ResultCode = proto.OpOk
 		if err = reply.WriteToConn(connect); err != nil {
-			log.LogErrorf("Failed to write to connect: %v", err)
 			return
 		}
+		needReplySize -= currReadSize
+		offset += int64(currReadSize)
 		if currReadSize == util.ReadBlockSize {
 			proto.Buffers.Put(reply.Data)
 		}
-
-	out:
-		s.metrics.MetricIOBytes.AddWithLabels(int64(p.Size), metricPartitionIOLabels)
-		partitionIOMetric.SetWithLabels(nil, metricPartitionIOLabels)
-		tpObject.Set(nil)
-
-		needReplySize -= currReadSize
-		offset += int64(currReadSize)
-
 		logContent := fmt.Sprintf("action[operatePacket] %v.",
 			reply.LogMessage(reply.GetOpMsg(), connect.RemoteAddr().String(), reply.StartT, err))
 		log.LogReadf(logContent)
