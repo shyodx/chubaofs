@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
 RootPath=$(cd $(dirname $0) ; pwd)
-CfsBase="ghcr.io/chubaofs/cbfs-base:1.1"
+CfsBase="ghcr.io/chubaofs/cbfs-base:1.1-golang-1.16.12"
 
 docker build -t ${CfsBase} -f ${RootPath}/Dockerfile ${RootPath}
