@@ -429,6 +429,10 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 		if s.handler == nil {
 			s.handler = NewExtentHandler(s, offset, storeMode, 0)
 			s.dirty = false
+		} else if s.handler.storeMode != storeMode {
+			// store mode changed, so close open handler and start a new one
+			s.closeOpenHandler()
+			continue
 		}
 
 		ek, err = s.handler.write(data, offset, size, direct)
@@ -528,15 +532,23 @@ func (s *Streamer) traverse() (err error) {
 }
 
 func (s *Streamer) closeOpenHandler() {
-	if s.handler != nil {
-		s.handler.setClosed()
+	// just in case to avoid infinite loop
+	var cnt int = 2 * MaxPacketErrorCount
+
+	handler := s.handler
+	for handler != nil && cnt >= 0 {
+		handler.setClosed()
 		if s.dirtylist.Len() < MaxDirtyListLen {
-			s.handler.flushPacket()
+			handler.flushPacket()
 		} else {
 			// TODO unhandled error
-			s.handler.flush()
+			handler.flush()
 		}
+		handler = handler.recoverHandler
+		cnt--
+	}
 
+	if s.handler != nil {
 		if !s.dirty {
 			// in case the current handler is not on the dirty list and will not get cleaned up
 			// TODO unhandled error
