@@ -1036,6 +1036,9 @@ const (
 
 func (m *Server) setNodeRdOnly(addr string, nodeType uint32, rdOnly bool) (err error) {
 	if nodeType == TypeDataPartion {
+		m.cluster.dnMutex.Lock()
+		defer m.cluster.dnMutex.Unlock()
+
 		value, ok := m.cluster.dataNodes.Load(addr)
 		if !ok {
 			return fmt.Errorf("[setNodeRdOnly] data node %s is not exist", addr)
@@ -1052,6 +1055,9 @@ func (m *Server) setNodeRdOnly(addr string, nodeType uint32, rdOnly bool) (err e
 
 		return
 	}
+
+	m.cluster.mnMutex.Lock()
+	defer m.cluster.mnMutex.Unlock()
 
 	value, ok := m.cluster.metaNodes.Load(addr)
 	if !ok {
