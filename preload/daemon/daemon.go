@@ -50,6 +50,17 @@ var (
 	optVersion = flag.Bool("v", false, "show version")
 )
 
+func Errno(err error) int {
+	if err == nil {
+		return 0
+	}
+	if errno, is := err.(syscall.Errno); is {
+		return -int(errno)
+	}
+	log.LogErrorf("Unknown err: %v", err)
+	return -int(syscall.EUCLEAN)
+}
+
 type Daemon struct {
 	ctx    context.Context
 	cancel context.CancelFunc
