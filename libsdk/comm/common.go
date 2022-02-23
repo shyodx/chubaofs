@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/willf/bitset"
 
 	"github.com/chubaofs/chubaofs/proto"
@@ -75,6 +76,7 @@ func newClient() *client {
 		fdmap: make(map[uint]*file),
 		fdset: bitset.New(maxFdNum),
 		cwd:   "/",
+		tasks: make(map[int64]UserTask),
 	}
 
 	gClientManager.mu.Lock()
@@ -112,6 +114,11 @@ type dirStream struct {
 	dirents []proto.Dentry
 }
 
+type UserTask interface {
+	SetCid(cid int64)
+	SetTid(tid int64)
+}
+
 type client struct {
 	// client id allocated by libsdk
 	cid int64
@@ -135,6 +142,11 @@ type client struct {
 	// server info
 	mw *meta.MetaWrapper
 	ec *stream.ExtentClient
+
+	// user tasks
+	nextTaskID int64
+	tasks      map[int64]UserTask
+	taskLock   sync.RWMutex
 }
 
 func CFSNewClient() int64 {
@@ -200,6 +212,58 @@ func CFSCloseClient(cid int64) {
 		removeClient(cid)
 	}
 	log.LogFlush()
+}
+
+func CFSGetTask(cid, tid int64) (UserTask, error) {
+	c, exist := getClient(cid)
+	if !exist {
+		return nil, errors.NewErrorf("client[%v] not found", cid)
+	}
+
+	c.taskLock.RLock()
+	t, exist := c.tasks[tid]
+	c.taskLock.RUnlock()
+
+	if !exist {
+		return nil, errors.NewErrorf("client[%v] task[%v] not found", cid, tid)
+	}
+
+	return t, nil
+}
+
+func CFSRegisterTask(cid int64, t UserTask) (int64, error) {
+	c, exist := getClient(cid)
+	if !exist {
+		return 0, errors.NewErrorf("client[%v] not found", cid)
+	}
+
+	tid := atomic.AddInt64(&c.nextTaskID, 1)
+	t.SetCid(cid)
+	t.SetTid(tid)
+
+	c.taskLock.Lock()
+	c.tasks[tid] = t
+	c.taskLock.Unlock()
+
+	return tid, nil
+}
+
+func CFSUnregisterTask(cid, tid int64) (UserTask, error) {
+	c, exist := getClient(cid)
+	if !exist {
+		return nil, errors.NewErrorf("client[%v] not found", cid)
+	}
+
+	c.taskLock.Lock()
+	t, exist := c.tasks[tid]
+	delete(c.tasks, tid)
+	c.taskLock.Unlock()
+
+	if !exist {
+		return nil, errors.NewErrorf("client[%v] task[%v] not found", cid, tid)
+	}
+
+	return t, nil
 }
 
 func CFSChdir(cid int64, path string) int {
