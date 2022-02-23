@@ -18,10 +18,15 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"path"
+	"reflect"
+	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/chubaofs/chubaofs/proto"
@@ -39,6 +44,8 @@ var (
 
 	DefaultPprofPort = 17520
 
+	DefaultSockPath = path.Join(DefaultWorkspace, "daemon.sock")
+
 	optVerbose = flag.Bool("V", false, "print debug log")
 	optVersion = flag.Bool("v", false, "show version")
 )
@@ -48,9 +55,14 @@ type Daemon struct {
 	cancel context.CancelFunc
 
 	flock *os.File
+
+	listener net.Listener
+	wg       *sync.WaitGroup
 }
 
-var daemon *Daemon = &Daemon{}
+var daemon *Daemon = &Daemon{
+	wg: &sync.WaitGroup{},
+}
 
 func initLog() {
 	logLevel := DefaultLogLevel
@@ -95,6 +107,14 @@ func cleanupEnv() {
 		daemon.cancel()
 	}
 
+	if daemon.listener != nil && !reflect.ValueOf(daemon.listener).IsNil() {
+		sockPath := daemon.listener.Addr().String()
+		// unlink first to avoid new daemon acquire the same file
+		syscall.Unlink(sockPath)
+		daemon.listener.Close()
+		log.LogDebugf("Remove %s\n", sockPath)
+	}
+
 	if daemon.flock != nil {
 		filePath := daemon.flock.Name()
 		// unlink first to avoid new daemon acquire the same file
@@ -111,6 +131,63 @@ func startPprofServer() {
 		addr := fmt.Sprintf(":%d", DefaultPprofPort)
 		http.ListenAndServe(addr, nil)
 	}()
+}
+
+func registerSignalHandlers() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigCh
+		log.LogInfof("signal %s received", sig.String())
+		// TODO: wait events to finish and cleanup
+		cleanupEnv()
+		os.Exit(0)
+	}()
+}
+
+func listenAndServe() (err error) {
+	// FIXME: maybe use config to set the sock file path
+	var laddr *net.UnixAddr
+
+	sockAddr := DefaultSockPath
+
+	fmt.Printf("DEBUG: create socket %s\n", sockAddr)
+	if laddr, err = net.ResolveUnixAddr("unix", sockAddr); err != nil {
+		log.LogErrorf("Cannot resolve unix addr %s: %v", sockAddr, err)
+		return
+	}
+
+	if daemon.listener, err = net.ListenUnix("unix", laddr); err != nil {
+		log.LogErrorf("Cannot create unix domain %s: %v", laddr.String(), err)
+		return
+	}
+
+	if err = os.Chmod(sockAddr, 0666); err != nil {
+		log.LogErrorf("Failed to chmod socket %s: %v", sockAddr, err)
+		daemon.listener.Close()
+		daemon.listener = nil
+		return
+	}
+
+	for {
+		var conn net.Conn
+		if conn, err = daemon.listener.Accept(); err != nil {
+			if strings.Contains(err.Error(), "use of closed network connection") {
+				break
+			}
+			log.LogErrorf("Unix domain socket accepts fail: %v", err)
+			continue
+		}
+		fmt.Printf("DEBUG: a new connection accepted\n")
+		// FIXME: check request first? how to return error?
+		daemon.wg.Add(1)
+		go HandleCmd(daemon.wg, conn)
+	}
+
+	log.LogDebugf("goroutine: wait accept closed\n")
+	daemon.wg.Wait()
+
+	return
 }
 
 func main() {
@@ -132,4 +209,11 @@ func main() {
 	log.LogInfof("cfs daemon start")
 
 	startPprofServer()
+
+	registerSignalHandlers()
+
+	if err := listenAndServe(); err != nil {
+		log.LogErrorf("Failed to listen: %v", err)
+		return
+	}
 }
