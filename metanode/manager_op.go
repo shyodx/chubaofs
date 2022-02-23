@@ -253,7 +253,7 @@ func (m *metadataManager) opDeleteDentry(conn net.Conn, p *Packet,
 	}
 	err = mp.DeleteDentry(req, p)
 	m.respondToClient(conn, p)
-	log.LogDebugf("%s [opDeleteDentry] req: %d - %v, resp: %v, body: %s",
+	log.LogWritef("[opDeleteDentry] ip: %s, req: %d - %+v, resp: %v, body: %s",
 		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data)
 	return
 }
