@@ -320,6 +320,23 @@ build_fdstore() {
     popd >/dev/null
 }
 
+build_preload() {
+    pre_build_server
+    case `uname` in
+        Linux)
+            TargetFile=${1:-${BuildBinPath}/cfs-preload-daemon}
+            ;;
+        *)
+            echo "Unsupported platform"
+            exit 0
+            ;;
+    esac
+    pushd $SrcPath >/dev/null
+    echo -n "build cfs-preload-daemon "
+    go build $MODFLAGS -ldflags "${LDFlags}" -o ${TargetFile} ${SrcPath}/preload/daemon/*.go && echo "success" || echo "failed"
+    popd >/dev/null
+}
+
 clean() {
     $RM -rf ${BuildBinPath}
 }
@@ -362,6 +379,9 @@ case "$cmd" in
         ;;
     "fdstore")
         build_fdstore
+        ;;
+    "preload")
+        build_preload
         ;;
     "clean")
         clean
