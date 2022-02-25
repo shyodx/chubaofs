@@ -449,6 +449,12 @@ func (task *Task) handleRequest(req *CtrlItem) {
 		ret = int64(fd)
 		fmt.Printf("DEBUG: cfs_open %s return %v\n", filePath, ret)
 
+	case CLOSE:
+		var params *CloseParams = parseCloseParams(req.data[:])
+		comm.CFSClose(task.Cid, params.fd)
+		ret = 0 // never fail
+		fmt.Printf("DEBUG: cfs_close %d return %v\n", params.fd, ret)
+
 	default:
 		log.LogErrorf("Unknown opcode %v", req.OpCode)
 		ret = int64(Errno(syscall.EINVAL))

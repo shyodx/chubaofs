@@ -23,6 +23,9 @@ import (
 const (
 	// Fuse defined OpCode
 	OPEN  = 14
+
+	// ChubaoFS self defined OpCode
+	CLOSE     = 4095
 )
 
 type OpenParamsHdr struct {
@@ -51,6 +54,19 @@ func parseOpenParams(data []byte, hasInlineData bool) *OpenParams {
 		sliceHdr.Len = int(params.hdr.pathLen)
 		sliceHdr.Cap = int(params.hdr.pathLen)
 	}
+
+	return params
+}
+
+type CloseParams struct {
+	fd int
+}
+
+func parseCloseParams(data []byte) *CloseParams {
+	params := &CloseParams{}
+
+	sliceHdr := (*reflect.SliceHeader)(unsafe.Pointer(&data))
+	params.fd = *((*int)(unsafe.Pointer(sliceHdr.Data)))
 
 	return params
 }
