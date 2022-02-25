@@ -432,6 +432,23 @@ func (task *Task) handleRequest(req *CtrlItem) {
 
 	fmt.Printf("DEBUG: handle request reqid %v dataIdx %v doneIdx %v opcode %v\n", req.ReqId, req.DataIdx, req.DoneIdx, req.OpCode)
 	switch req.OpCode {
+	case OPEN:
+		var params *OpenParams
+		if req.State&CtrlStateInlineData == CtrlStateInlineData {
+			params = parseOpenParams(req.data[:], true)
+		} else {
+			params = parseOpenParams(req.data[:], false)
+			// TODO read data item
+		}
+
+		filePath := string(params.path[:params.hdr.pathLen])
+		fmt.Printf("DEBUG: flags:%x mode:%o pathLen:%v path:%s\n",
+			params.hdr.flags, params.hdr.mode, params.hdr.pathLen, filePath)
+
+		fd := comm.CFSOpen(task.Cid, filePath, params.hdr.flags, params.hdr.mode)
+		ret = int64(fd)
+		fmt.Printf("DEBUG: cfs_open %s return %v\n", filePath, ret)
+
 	default:
 		log.LogErrorf("Unknown opcode %v", req.OpCode)
 		ret = int64(Errno(syscall.EINVAL))

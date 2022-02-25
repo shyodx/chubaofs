@@ -371,6 +371,7 @@ func CFSSetattr(cid int64, path string, stat *CFSStatInfo, valid uint32) int {
 }
 
 func CFSOpen(cid int64, path string, flags, mode uint32) int {
+	fmt.Printf("DEBUG: cid %v path %v flags %v mode %v\n", cid, path, flags, mode)
 	c, exist := getClient(cid)
 	if !exist {
 		return statusEINVAL
