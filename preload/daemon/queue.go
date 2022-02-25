@@ -551,9 +551,44 @@ func handleUnregister(data []byte) (int, []byte) {
 
 func handleWakeup(data []byte) (int, []byte) {
 	var (
-		ret  []byte = make([]byte, 8) // 8 is enough for a 64bit value
-		offs int
+		ret   []byte = make([]byte, 8) // 8 is enough for a 64bit value
+		offs  int
+		exist bool
 	)
+
+	// cmd unregister format:
+	//   rsvd1 uint16
+	//   rsvd2 uint32
+	//   AppID uint64
+	offs += 6
+	appid := binary.BigEndian.Uint64(data[offs : offs+8])
+	offs += 8
+	daemon.applock.RLock()
+	// FIXME: need increase refcnt of app?
+	app, exist := daemon.apps[appid]
+	daemon.applock.RUnlock()
+	if !exist {
+		// FIXME: always return 0?
+		log.LogErrorf("Unregister app[%v] not exist: %v", appid)
+		binary.BigEndian.PutUint64(ret, 0)
+		return offs, ret
+	}
+	cid := app.Cid
+	tid := app.Tid
+
+	t, err := comm.CFSGetTask(cid, tid)
+	if err != nil {
+		log.LogWarnf("Wakeup client[%v] task[%v]: %v", cid, tid, err)
+		// FIXME: always return 0?
+		binary.BigEndian.PutUint64(ret, 0)
+		return offs, ret
+	}
+
+	task := t.(*Task)
+	fmt.Printf("DEBUG: wakeup client id %v task id %v\n", cid, tid)
+	task.wakeup()
+
+	binary.BigEndian.PutUint64(ret, 0)
 
 	return offs, ret
 }

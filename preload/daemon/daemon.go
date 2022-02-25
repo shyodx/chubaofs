@@ -31,6 +31,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/chubaofs/chubaofs/libsdk/comm"
 	"github.com/chubaofs/chubaofs/proto"
@@ -268,13 +269,18 @@ type Task struct {
 	queueArray *QueueArray
 	QueueCh    chan interface{}
 	ShutdownCh chan struct{}
+	IdleCh     chan struct{}
 	wg         sync.WaitGroup
+
+	needExit bool
+	isIdle   bool
 }
 
 func newTask(queueArray *QueueArray) *Task {
 	task := &Task{
 		QueueCh:    make(chan interface{}),
 		ShutdownCh: make(chan struct{}),
+		IdleCh:     make(chan struct{}),
 	}
 
 	task.queueArray = queueArray
@@ -294,6 +300,11 @@ func (task *Task) shutdown() {
 	task.ShutdownCh <- struct{}{}
 	// wait all goroutines to finish so that we could munmap shm safely
 	task.wg.Wait()
+}
+
+func (task *Task) wakeup() {
+	fmt.Printf("DEBUG: send wakeup\n")
+	task.IdleCh <- struct{}{}
 }
 
 func (task *Task) serve(ctx context.Context) {
@@ -330,7 +341,54 @@ func (task *Task) WaitQueueRequests(ctx context.Context) {
 		task.wg.Done()
 	}()
 
+	idleChecker := time.NewTicker(time.Second)
+
+	task.wg.Add(1)
+	go func() {
+		for {
+			select {
+			case <-idleChecker.C:
+				if !task.isIdle {
+					fmt.Printf("DEBUG: task id %d WaitQueueRequests became idle\n", task.Tid)
+					task.isIdle = true
+					flags := QueueSuspendFlag
+					atomic.StoreUint32(queueArray.ctrl.hdr.flags, flags)
+				}
+			case <-ctx.Done():
+				fmt.Printf("DEBUG: ctx is closed, set needExit true\n")
+				task.needExit = true
+			case <-task.ShutdownCh:
+				fmt.Printf("DEBUG: task.ShutdownCh is closed, set needExit true\n")
+				task.needExit = true
+			}
+
+			if task.needExit {
+				idleChecker.Stop()
+				if task.isIdle {
+					task.IdleCh <- struct{}{}
+				}
+				fmt.Printf("DEBUG: goroutine: Wait queue requests 2 close\n")
+				break
+			}
+		}
+		task.wg.Done()
+	}()
+
 	for {
+		if task.needExit {
+			fmt.Printf("DEBUG: needExit is true, return\n")
+			task.QueueCh <- io.EOF
+			return
+		}
+
+		if task.isIdle {
+			fmt.Printf("DEBUG: task id %d suspend polling ...\n", task.Tid)
+			<-task.IdleCh
+			atomic.StoreUint32(queueArray.ctrl.hdr.flags, 0)
+			task.isIdle = false
+			idleChecker.Reset(time.Second)
+			fmt.Printf("DEBUG: task id %d reseum polling ...\n", task.Tid)
+		}
 		//fmt.Printf("DEBUG: Waiting queue requests ctrl size %v data size %v done size %v\n",
 		//	unsafe.Sizeof(CtrlItem{}), unsafe.Sizeof(DataItem{}), unsafe.Sizeof(DoneItem{}))
 		tail := atomic.LoadUint32(&queueArray.ctrl.tail)
@@ -344,6 +402,7 @@ func (task *Task) WaitQueueRequests(ctx context.Context) {
 			continue
 		}
 
+		idleChecker.Reset(time.Second)
 		atomic.AddUint32(&queueArray.ctrl.tail, 1)
 		fmt.Printf("DEBUG: valid ctrl_item received, send to channel\n")
 		task.QueueCh <- ctrlItem
