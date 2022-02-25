@@ -506,6 +506,47 @@ func (task *Task) handleRequest(req *CtrlItem) {
 		}
 		fmt.Printf("DEBUG: read return %v\n", ret)
 
+	case WRITE:
+		var params *RWParams
+		var dataBuffer []*RWData
+		var left int
+		var offs int
+		var wsize int
+
+		if req.State&CtrlStateInlineData == CtrlStateInlineData {
+			params = parseRWParams(req.data[:], true)
+		} else {
+			params = parseRWParams(req.data[:], false)
+		}
+		if dataBuffer, err = parseRWData(req, task.queueArray.data, params); err != nil {
+			log.LogErrorf("Unable to parse read data item: %v", err)
+			ret = int64(Errno(syscall.EINVAL))
+			break
+		}
+		left = int(params.hdr.size)
+		offs = int(params.hdr.offs)
+		for _, buf := range dataBuffer {
+			n := comm.CFSWrite(task.Cid, int(params.hdr.fd), buf.data, offs)
+			if n < 0 {
+				log.LogErrorf("Failed to write %v", req.OpCode)
+				fmt.Printf("Error: failed to read: %v\n", n)
+				ret = int64(n)
+				break
+			} else if n < len(buf.data) {
+				fmt.Printf("DEBUG: data is not fully writen: %v\n", n)
+				wsize += n
+				break
+			} else { // n == bufSize
+				wsize += n
+				left -= n
+				offs += n
+			}
+		}
+		if wsize > 0 {
+			ret = int64(wsize)
+		}
+		fmt.Printf("DEBUG: write return %v\n", ret)
+
 	default:
 		log.LogErrorf("Unknown opcode %v", req.OpCode)
 		ret = int64(Errno(syscall.EINVAL))

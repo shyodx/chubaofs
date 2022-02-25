@@ -517,6 +517,7 @@ func CFSWrite(cid int64, fd int, buffer []byte, off int) int {
 }
 
 func CFSRead(cid int64, fd int, buffer []byte, off int) int {
+	fmt.Printf("DEBUG: cid %v fd %v bufLen %v off %v\n", cid, fd, len(buffer), off)
 	c, exist := getClient(cid)
 	if !exist {
 		return statusEINVAL

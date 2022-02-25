@@ -27,6 +27,7 @@ const (
 	// Fuse defined OpCode
 	OPEN  = 14
 	READ  = 15
+	WRITE = 16
 
 	// ChubaoFS self defined OpCode
 	CLOSE     = 4095
