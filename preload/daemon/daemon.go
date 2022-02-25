@@ -267,12 +267,14 @@ type Task struct {
 
 	queueArray *QueueArray
 	QueueCh    chan interface{}
+	ShutdownCh chan struct{}
 	wg         sync.WaitGroup
 }
 
 func newTask(queueArray *QueueArray) *Task {
 	task := &Task{
 		QueueCh:    make(chan interface{}),
+		ShutdownCh: make(chan struct{}),
 	}
 
 	task.queueArray = queueArray
@@ -285,6 +287,13 @@ func (task *Task) SetCid(cid int64) {
 
 func (task *Task) SetTid(tid int64) {
 	task.Tid = tid
+}
+
+func (task *Task) shutdown() {
+	fmt.Printf("DEBUG: send shutdown\n")
+	task.ShutdownCh <- struct{}{}
+	// wait all goroutines to finish so that we could munmap shm safely
+	task.wg.Wait()
 }
 
 func (task *Task) serve(ctx context.Context) {

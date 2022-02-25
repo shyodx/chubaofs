@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -403,9 +404,58 @@ func handleRegisterClone(data []byte) (int, []byte) {
 
 func handleUnregister(data []byte) (int, []byte) {
 	var (
-		ret  []byte = make([]byte, 8) // 8 is enough for a 64bit value
-		offs int
+		ret             []byte = make([]byte, 8) // 8 is enough for a 64bit value
+		offs            int
+		exist           bool
+		needCloseClient bool
 	)
+
+	// cmd unregister format:
+	//   rsvd1 uint16
+	//   rsvd2 uint32
+	//   AppID uint64
+	offs += 6
+	appid := binary.BigEndian.Uint64(data[offs : offs+8])
+	offs += 8
+	daemon.applock.RLock()
+	// FIXME: need increase refcnt of app?
+	app, exist := daemon.apps[appid]
+	delete(daemon.apps, appid)
+	if len(daemon.apps) == 0 {
+		needCloseClient = true
+	}
+	daemon.applock.RUnlock()
+	if !exist {
+		// FIXME: always return 0?
+		log.LogErrorf("Unregister app[%v] not exist: %v", appid)
+		binary.BigEndian.PutUint64(ret, 0)
+		return offs, ret
+	}
+	cid := app.Cid
+	tid := app.Tid
+
+	t, err := comm.CFSUnregisterTask(cid, tid)
+	if err != nil {
+		// FIXME: always return 0?
+		log.LogErrorf("Unregister client[%v] task[%v]: %v", cid, tid, err)
+		binary.BigEndian.PutUint64(ret, 0)
+		return offs, ret
+	}
+	task := t.(*Task)
+	fmt.Printf("DEBUG: task id %v unmap shm\n", tid)
+	task.shutdown()
+	syscall.Munmap(task.queueArray.ctrl.addr)
+	syscall.Munmap(task.queueArray.data.addr)
+	syscall.Munmap(task.queueArray.done.addr)
+
+	if needCloseClient {
+		fmt.Printf("DEBUG: client id %v close client\n", cid)
+		comm.CFSCloseClient(cid)
+	}
+
+	binary.BigEndian.PutUint64(ret, 0)
+
+	runtime.GC()
 
 	return offs, ret
 }
