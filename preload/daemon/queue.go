@@ -18,11 +18,23 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"os"
+	"reflect"
 	"sync"
 	"syscall"
+	"unsafe"
 
 	"github.com/chubaofs/chubaofs/util/log"
 )
+
+const (
+	PAGESIZE uint32 = 4096
+)
+
+// align must be power of 2
+func RoundUp(size uint32, align uint32) uint32 {
+	return (size + (align - 1)) / align * align
+}
 
 type CmdType int
 
@@ -186,6 +198,65 @@ func parseQueueInfo(data []byte) (*QueueInfo, int) {
 	copy(queue.filename, data[start:end])
 
 	return queue, end
+}
+
+func ShmOpen(filename string, flag int, perm os.FileMode) (*os.File, error) {
+	var shmFlags int = syscall.O_NOFOLLOW | syscall.O_CLOEXEC | syscall.O_NONBLOCK
+	// FIXME: should parse and check filename like c library
+	filePath := fmt.Sprintf("/dev/shm/%s", filename)
+	return os.OpenFile(filePath, flag|shmFlags, perm)
+}
+
+func ShmUnlink(filename string) error {
+	// FIXME: should parse and check filename like c library
+	filePath := fmt.Sprintf("/dev/shm/%s", filename)
+	return os.Remove(filePath)
+}
+
+func ShmClose(file *os.File) {
+	file.Close()
+}
+
+func mapQueue(queue *QueueInfo) (err error) {
+	var shmFile *os.File
+
+	if shmFile, err = ShmOpen(string(queue.filename), os.O_RDWR, 0666); err != nil {
+		log.LogErrorf("failed to open %v: %v", string(queue.filename), err)
+		return
+	}
+	defer ShmClose(shmFile)
+
+	length := int(RoundUp(uint32(queue.size)*queue.members, PAGESIZE))
+	queue.addr, err = syscall.Mmap(int(shmFile.Fd()), 0, length, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		log.LogErrorf("failed to mmap %v: %v", string(queue.filename), err)
+		return
+	}
+
+	switch queue.queueType {
+	case CtrlQueue:
+		sliceHdr1 := (*reflect.SliceHeader)(unsafe.Pointer(&queue.addr))
+		sliceHdr2 := (*reflect.SliceHeader)(unsafe.Pointer(&queue.data))
+		sliceHdr2.Data = sliceHdr1.Data + uintptr(unsafe.Sizeof(QueueHeader{}))
+		sliceHdr2.Len = sliceHdr1.Len - int(unsafe.Sizeof(QueueHeader{}))
+		sliceHdr2.Cap = sliceHdr1.Cap - int(unsafe.Sizeof(QueueHeader{}))
+		queue.hdr.head = (*uint32)(unsafe.Pointer(sliceHdr1.Data))
+		queue.hdr.tail = (*uint32)(unsafe.Pointer(sliceHdr1.Data + unsafe.Sizeof(uint32(0))))
+		queue.hdr.flags = (*uint32)(unsafe.Pointer(sliceHdr1.Data + unsafe.Sizeof(uint32(0))*2))
+		fmt.Printf("DEBUG: queue %v addr %p data %v head %p tail %p flags %p\n",
+			queue.queueType, unsafe.Pointer(sliceHdr1.Data), unsafe.Pointer(sliceHdr2.Data),
+			queue.hdr.head, queue.hdr.tail, queue.hdr.flags)
+	case DataQueue, DoneQueue:
+		sliceHdr1 := (*reflect.SliceHeader)(unsafe.Pointer(&queue.addr))
+		sliceHdr2 := (*reflect.SliceHeader)(unsafe.Pointer(&queue.data))
+		sliceHdr2.Data = sliceHdr1.Data
+		sliceHdr2.Len = sliceHdr1.Len
+		sliceHdr2.Cap = sliceHdr1.Cap
+		fmt.Printf("DEBUG: queue %v addr %p data %p\n",
+			queue.queueType, unsafe.Pointer(sliceHdr1.Data), unsafe.Pointer(sliceHdr2.Data))
+	}
+
+	return nil
 }
 
 func handleRegisterNew(data []byte) (int, []byte) {
