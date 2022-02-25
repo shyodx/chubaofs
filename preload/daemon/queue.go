@@ -21,6 +21,7 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -259,6 +260,31 @@ func mapQueue(queue *QueueInfo) (err error) {
 	}
 
 	return nil
+}
+
+func (queue *QueueInfo) QueueItem(idx uint32) interface{} {
+	sliceHdr := (*reflect.SliceHeader)(unsafe.Pointer(&queue.data))
+
+	if idx > queue.members {
+		return nil
+	}
+
+	switch queue.queueType {
+	case CtrlQueue:
+		return (*CtrlItem)(unsafe.Pointer(sliceHdr.Data + uintptr(CtrlItemSize*idx)))
+	case DataQueue:
+		return (*DataItem)(unsafe.Pointer(sliceHdr.Data + uintptr(DataItemSize*idx)))
+	case DoneQueue:
+		return (*DoneItem)(unsafe.Pointer(sliceHdr.Data + uintptr(DoneItemSize*idx)))
+	}
+
+	return syscall.EINVAL
+}
+
+func (item *DoneItem) QueueMarkItemDone(retVal int64) {
+	item.RetVal = retVal
+	/* FIXME: need write barrier??? */
+	atomic.StoreUint32(&item.State, DoneStateReady)
 }
 
 func handleRegisterNew(data []byte) (int, []byte) {
