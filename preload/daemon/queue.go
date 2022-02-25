@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/chubaofs/chubaofs/libsdk/comm"
+	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
 )
 
@@ -261,9 +263,105 @@ func mapQueue(queue *QueueInfo) (err error) {
 
 func handleRegisterNew(data []byte) (int, []byte) {
 	var (
-		idStr []byte = make([]byte, 8) // 8 is enough for a 64bit value
-		offs  int
+		idStr        []byte = make([]byte, 8) // 8 is enough for a 64bit value
+		offs         int
+		length       int
+		initQueueNum QueueType
+		queueArray   *QueueArray = &QueueArray{}
+		err          error
 	)
+
+	// cmd registernew format:
+	//   rsvd1     uint16
+	//   rsvd2     uint32
+	//   rsvd3     uint64
+	//   queueinfo []
+	offs += 14
+
+	for offs < len(data) {
+		if initQueueNum == MaxQueue {
+			break
+		}
+
+		queueType := QueueType(binary.BigEndian.Uint16(data[offs : offs+2]))
+		fmt.Printf("DEBUG: get type %v\n", queueType)
+		offs += 2
+		switch queueType {
+		case CtrlQueue:
+			queueArray.ctrl, length = parseQueueInfo(data[offs:])
+			queueArray.ctrl.queueType = queueType
+			offs += length
+			fmt.Printf("DEBUG: offs %v ctrl %s\n", offs, string(queueArray.ctrl.filename))
+			if err = mapQueue(queueArray.ctrl); err != nil {
+				errno := Errno(syscall.ENODEV)
+				binary.BigEndian.PutUint64(idStr, uint64(errno))
+				return offs, idStr
+			}
+		case DataQueue:
+			queueArray.data, length = parseQueueInfo(data[offs:])
+			queueArray.data.queueType = queueType
+			offs += length
+			fmt.Printf("DEBUG: offs %v data %s\n", offs, string(queueArray.data.filename))
+			if err = mapQueue(queueArray.data); err != nil {
+				errno := Errno(syscall.ENODEV)
+				binary.BigEndian.PutUint64(idStr, uint64(errno))
+				return offs, idStr
+			}
+		case DoneQueue:
+			queueArray.done, length = parseQueueInfo(data[offs:])
+			queueArray.done.queueType = queueType
+			offs += length
+			fmt.Printf("DEBUG: offs %v done %s\n", offs, string(queueArray.done.filename))
+			if err = mapQueue(queueArray.done); err != nil {
+				errno := Errno(syscall.ENODEV)
+				binary.BigEndian.PutUint64(idStr, uint64(errno))
+				return offs, idStr
+			}
+		default:
+			err = errors.NewErrorf("invalid queue type %v", queueType)
+			fmt.Printf("invalid queue type %v\n", queueType)
+			errno := Errno(syscall.EINVAL)
+			binary.BigEndian.PutUint64(idStr, uint64(errno))
+			return offs, idStr
+		}
+
+		initQueueNum++
+	}
+
+	cid := comm.CFSNewClient()
+
+	task := newTask(queueArray)
+	var tid int64
+	if tid, err = comm.CFSRegisterTask(cid, task); err != nil {
+		panic(err.Error())
+	}
+	//log.LogDebugf("register request clientid[%v] taskid[%v]", cid, tid)
+	fmt.Printf("DEBUG: register request Client Id %v Task Id %v\n", cid, tid)
+
+	/* FIXME: need check return value? */
+	comm.CFSSetClient(cid, "volName", "ltptest")
+	comm.CFSSetClient(cid, "masterAddr", "192.168.0.11:17010,192.168.0.12:17010,192.168.0.13:17010")
+	comm.CFSSetClient(cid, "followerRead", "true")
+	comm.CFSSetClient(cid, "user", "ltptest")
+	comm.CFSSetClient(cid, "ak", "39bEF4RrAQgMj6RV")
+	comm.CFSSetClient(cid, "sk", "TRL6o3JL16YOqvZGIohBDFTHZDEcFsyd")
+
+	fmt.Printf("DEBUG: start client\n")
+	if ret := comm.CFSStartClient(cid); ret < 0 {
+		fmt.Printf("Failed to start client: %v\n", ret)
+		binary.BigEndian.PutUint64(idStr, uint64(ret))
+		return offs, idStr
+	}
+
+	// response client
+	appid, app := daemon.App(cid, tid)
+	binary.BigEndian.PutUint64(idStr, appid)
+	fmt.Printf("DEBUG: return client id %v to app\n", appid)
+	daemon.applock.Lock()
+	daemon.apps[appid] = app
+	daemon.applock.Unlock()
+
+	go task.serve(daemon.ctx)
 
 	return offs, idStr
 }

@@ -27,8 +27,10 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
+	"github.com/chubaofs/chubaofs/libsdk/comm"
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/log"
 )
@@ -61,6 +63,11 @@ func Errno(err error) int {
 	return -int(syscall.EUCLEAN)
 }
 
+type App struct {
+	Cid int64
+	Tid int64
+}
+
 type Daemon struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -69,10 +76,21 @@ type Daemon struct {
 
 	listener net.Listener
 	wg       *sync.WaitGroup
+
+	nextAppId uint64
+	apps      map[uint64]*App
+	applock   sync.RWMutex
 }
 
 var daemon *Daemon = &Daemon{
-	wg: &sync.WaitGroup{},
+	wg:   &sync.WaitGroup{},
+	apps: make(map[uint64]*App),
+}
+
+func (d *Daemon) App(cid, tid int64) (uint64, *App) {
+	appid := atomic.AddUint64(&d.nextAppId, 1)
+	app := &App{Cid: cid, Tid: tid}
+	return appid, app
 }
 
 func initLog() {
@@ -124,6 +142,18 @@ func cleanupEnv() {
 		syscall.Unlink(sockPath)
 		daemon.listener.Close()
 		log.LogDebugf("Remove %s\n", sockPath)
+	}
+
+	for appid, app := range daemon.apps {
+		fmt.Printf("DEBUG: wait appid %v client[%v] task[%v]", appid, app.Cid, app.Tid)
+		t, err := comm.CFSGetTask(app.Cid, app.Tid)
+		if err != nil {
+			fmt.Printf("Error: client[%v] task[%v]: %v", app.Cid, app.Tid, err)
+			continue
+		}
+		fmt.Printf("DEBUG: wait client %v task %v", app.Cid, app.Tid)
+		task := t.(*Task)
+		task.wg.Wait()
 	}
 
 	if daemon.flock != nil {
@@ -234,6 +264,7 @@ type Task struct {
 	Tid int64
 
 	queueArray *QueueArray
+	wg         sync.WaitGroup
 }
 
 func newTask(queueArray *QueueArray) *Task {
@@ -249,4 +280,7 @@ func (task *Task) SetCid(cid int64) {
 
 func (task *Task) SetTid(tid int64) {
 	task.Tid = tid
+}
+
+func (task *Task) serve(ctx context.Context) {
 }
