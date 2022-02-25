@@ -395,9 +395,98 @@ func handleRegisterNew(data []byte) (int, []byte) {
 
 func handleRegisterClone(data []byte) (int, []byte) {
 	var (
-		idStr []byte = make([]byte, 8) // 8 is enough for a 64bit value
-		offs  int
+		idStr        []byte = make([]byte, 8) // 8 is enough for a 64bit value
+		offs         int
+		length       int
+		initQueueNum QueueType
+		queueArray   *QueueArray = &QueueArray{}
+		err          error
 	)
+
+	// cmd registerclone format:
+	//   rsvd1     uint16
+	//   rsvd2     uint32
+	//   AppID     uint64
+	//   queueinfo []
+	offs += 6
+	appid := binary.BigEndian.Uint64(data[offs : offs+8])
+	offs += 8
+	fmt.Printf("DEBUG: appid %v\n", appid)
+	daemon.applock.RLock()
+	app, exist := daemon.apps[appid]
+	daemon.applock.RUnlock()
+	if !exist {
+		errno := Errno(syscall.EINVAL)
+		binary.BigEndian.PutUint64(idStr, uint64(errno))
+		return offs, idStr
+	}
+	cid := app.Cid
+
+	for offs < len(data) {
+		if initQueueNum == MaxQueue {
+			break
+		}
+		queueType := QueueType(binary.BigEndian.Uint16(data[offs : offs+2]))
+		//log.LogErrorf("get type %v", queueType)
+		fmt.Printf("DEBUG: get type %v\n", queueType)
+		offs += 2
+		switch queueType {
+		case CtrlQueue:
+			queueArray.ctrl, length = parseQueueInfo(data[offs:])
+			queueArray.ctrl.queueType = queueType
+			offs += length
+			fmt.Printf("DEBUG: offs %v ctrl %s\n", offs, string(queueArray.ctrl.filename))
+			if err = mapQueue(queueArray.ctrl); err != nil {
+				errno := Errno(syscall.ENODEV)
+				binary.BigEndian.PutUint64(idStr, uint64(errno))
+				return offs, idStr
+			}
+		case DataQueue:
+			queueArray.data, length = parseQueueInfo(data[offs:])
+			queueArray.data.queueType = queueType
+			offs += length
+			fmt.Printf("DEBUG: offs %v data %s\n", offs, string(queueArray.data.filename))
+			if err = mapQueue(queueArray.data); err != nil {
+				errno := Errno(syscall.ENODEV)
+				binary.BigEndian.PutUint64(idStr, uint64(errno))
+				return offs, idStr
+			}
+		case DoneQueue:
+			queueArray.done, length = parseQueueInfo(data[offs:])
+			queueArray.done.queueType = queueType
+			offs += length
+			fmt.Printf("DEBUG: offs %v done %s\n", offs, string(queueArray.done.filename))
+			if err = mapQueue(queueArray.done); err != nil {
+				errno := Errno(syscall.ENODEV)
+				binary.BigEndian.PutUint64(idStr, uint64(errno))
+				return offs, idStr
+			}
+		default:
+			err = errors.NewErrorf("invalid queue type %v", queueType)
+			fmt.Printf("invalid queue type %v\n", queueType)
+			errno := Errno(syscall.EINVAL)
+			binary.BigEndian.PutUint64(idStr, uint64(errno))
+			return offs, idStr
+		}
+
+		initQueueNum++
+	}
+
+	task := newTask(queueArray)
+	var tid int64
+	tid, err = comm.CFSRegisterTask(cid, task)
+	//log.LogErrorf("DEBUG: register request AppId %v", client.id)
+	fmt.Printf("DEBUG: register request Client Id %v Task Id %v\n", cid, tid)
+
+	// response client
+	appid, newApp := daemon.App(cid, tid)
+	binary.BigEndian.PutUint64(idStr, appid)
+	fmt.Printf("DEBUG: return client id %v to app\n", appid)
+	daemon.applock.Lock()
+	daemon.apps[appid] = newApp
+	daemon.applock.Unlock()
+
+	go task.serve(daemon.ctx)
 
 	return offs, idStr
 }
