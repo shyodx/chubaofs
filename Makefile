@@ -29,8 +29,8 @@ default: all
 phony := all
 all: build
 
-phony += build server authtool client client2 cli preload
-build: server authtool client cli libsdk fdstore preload
+phony += build server authtool client client2 cli preload libpreload
+build: server authtool client cli libsdk fdstore preload libpreload
 
 server: $(BIN_SERVER)
 
@@ -46,7 +46,7 @@ libsdk: $(BIN_LIBSDK)
 
 fdstore: $(BIN_FDSTORE)
 
-preload: $(BIN_PRELOAD)
+preload: $(BIN_PRELOAD) libpreload
 
 $(BIN_SERVER): $(COMMON_SRC) $(SERVER_SRC)
 	@build/build.sh server
@@ -71,6 +71,9 @@ $(BIN_FDSTORE): $(FDSTORE_SRC)
 
 $(BIN_PRELOAD): $(PRELOAD_SRC) libsdk/comm/*.go
 	@build/build.sh preload
+
+libpreload:
+	@build/build.sh libpreload
 
 phony += clean
 clean:

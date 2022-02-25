@@ -14,3 +14,7 @@ console/html
 vendor/dep
 java/target
 java/src/main/resources/*.so
+preload/*.o
+preload/cscope.*
+preload/*.so
+*.swp

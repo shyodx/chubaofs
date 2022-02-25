@@ -337,6 +337,31 @@ build_preload() {
     popd >/dev/null
 }
 
+build_libpreload() {
+    case `uname` in
+        Linux)
+            bindir=${1:-${BuildBinPath}}
+            ;;
+        *)
+            echo "Unsupported platform"
+            exit 0
+            ;;
+    esac
+
+    echo "build libcfspreload"
+    make -C $RootPath/preload M=$(pwd)
+    if [ $? -ne 0 ]; then
+        echo "failed"
+	return
+    fi
+    make -C $RootPath/preload M=$(pwd) BINDIR=${bindir} install
+    if [ $? -ne 0 ]; then
+        echo "failed"
+	return
+    fi
+    echo "success"
+}
+
 clean() {
     $RM -rf ${BuildBinPath}
 }
@@ -383,6 +408,9 @@ case "$cmd" in
     "preload")
         build_preload
         ;;
+    "libpreload")
+	build_libpreload
+	;;
     "clean")
         clean
         ;;
