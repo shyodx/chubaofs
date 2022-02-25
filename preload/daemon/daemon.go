@@ -228,3 +228,25 @@ func main() {
 		return
 	}
 }
+
+type Task struct {
+	Cid int64
+	Tid int64
+
+	queueArray *QueueArray
+}
+
+func newTask(queueArray *QueueArray) *Task {
+	task := &Task{}
+
+	task.queueArray = queueArray
+	return task
+}
+
+func (task *Task) SetCid(cid int64) {
+	task.Cid = cid
+}
+
+func (task *Task) SetTid(tid int64) {
+	task.Tid = tid
+}
