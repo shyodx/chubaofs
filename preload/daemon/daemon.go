@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -25,6 +26,7 @@ import (
 	"os/signal"
 	"path"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -264,11 +266,14 @@ type Task struct {
 	Tid int64
 
 	queueArray *QueueArray
+	QueueCh    chan interface{}
 	wg         sync.WaitGroup
 }
 
 func newTask(queueArray *QueueArray) *Task {
-	task := &Task{}
+	task := &Task{
+		QueueCh:    make(chan interface{}),
+	}
 
 	task.queueArray = queueArray
 	return task
@@ -283,4 +288,91 @@ func (task *Task) SetTid(tid int64) {
 }
 
 func (task *Task) serve(ctx context.Context) {
+	task.wg.Add(1)
+	go task.WaitQueueRequests(ctx)
+
+	for {
+		req, err := task.ReadRequest()
+		if err != nil {
+			fmt.Printf("DEBUG: Wait request handler to finish: %v\n", err)
+			if err == io.EOF {
+				break
+			}
+			// FIXME: should put errno in done item
+			break
+		}
+
+		task.wg.Add(1)
+		go func() {
+			defer task.wg.Done()
+			task.handleRequest(req)
+		}()
+	}
+
+	fmt.Printf("DEBUG: goroutine: serve close\n")
+	task.wg.Wait()
+}
+
+func (task *Task) WaitQueueRequests(ctx context.Context) {
+	queueArray := task.queueArray
+
+	defer func() {
+		fmt.Printf("DEBUG: goroutine: Wait queue requests 1 close\n")
+		task.wg.Done()
+	}()
+
+	for {
+		//fmt.Printf("DEBUG: Waiting queue requests ctrl size %v data size %v done size %v\n",
+		//	unsafe.Sizeof(CtrlItem{}), unsafe.Sizeof(DataItem{}), unsafe.Sizeof(DoneItem{}))
+		tail := atomic.LoadUint32(&queueArray.ctrl.tail)
+		tail = tail & queueArray.ctrl.mask
+		ctrlItem := queueArray.ctrl.QueueItem(tail).(*CtrlItem)
+		//fmt.Printf("DEBUG: clientId %v tail %v CtrlItem %p ReqID:%v OpCode:%v State:%x DoneIdx:%v DataIdx:%v\n",
+		//	client.id, tail, ctrlItem, ctrlItem.ReqId, ctrlItem.OpCode, ctrlItem.State, ctrlItem.DoneIdx, ctrlItem.DataIdx)
+		if atomic.LoadUint32(&ctrlItem.State) == CtrlStateNew {
+			//time.Sleep(time.Second)
+			runtime.Gosched()
+			continue
+		}
+
+		atomic.AddUint32(&queueArray.ctrl.tail, 1)
+		fmt.Printf("DEBUG: valid ctrl_item received, send to channel\n")
+		task.QueueCh <- ctrlItem
+	}
+}
+
+func (task *Task) ReadRequest() (*CtrlItem, error) {
+	var data interface{}
+
+	fmt.Printf("DEBUG: Start wait FuseCh and QueueCh\n")
+	select {
+	case data = <-task.QueueCh:
+		fmt.Printf("DEBUG: QueueCh has request\n")
+	}
+
+	switch data.(type) {
+	case error:
+		err := data.(error)
+		return nil, err
+	default:
+		return data.(*CtrlItem), nil
+	}
+}
+
+func (task *Task) handleRequest(req *CtrlItem) {
+	var ret int64
+
+	fmt.Printf("DEBUG: handle request reqid %v dataIdx %v doneIdx %v opcode %v\n", req.ReqId, req.DataIdx, req.DoneIdx, req.OpCode)
+	switch req.OpCode {
+	default:
+		log.LogErrorf("Unknown opcode %v", req.OpCode)
+		ret = int64(Errno(syscall.EINVAL))
+	}
+
+	doneItem := task.queueArray.done.QueueItem(req.DoneIdx).(*DoneItem)
+	if doneItem.ReqId != req.ReqId || doneItem.OpCode != req.OpCode {
+		panic(fmt.Sprintf("!!!ERROR!!!: invalid doneItem(%v) req(%v)\n", doneItem, req))
+	}
+	doneItem.QueueMarkItemDone(ret)
+	fmt.Printf("Mark done item %v Done\n", req.DoneIdx)
 }
