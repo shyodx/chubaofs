@@ -31,6 +31,7 @@ const (
 
 	// ChubaoFS self defined OpCode
 	CLOSE     = 4095
+	HOLD_FILE = 4094
 )
 
 type OpenParamsHdr struct {
@@ -165,4 +166,17 @@ func parseRWData(ctrlItem *CtrlItem, dataQueue *QueueInfo, params *RWParams) ([]
 	}
 
 	return dataBuffer, nil
+}
+
+type HoldFileParams struct {
+	fd int
+}
+
+func parseHoldFileParams(data []byte) *HoldFileParams {
+	params := &HoldFileParams{}
+
+	sliceHdr := (*reflect.SliceHeader)(unsafe.Pointer(&data))
+	params.fd = *((*int)(unsafe.Pointer(sliceHdr.Data)))
+
+	return params
 }

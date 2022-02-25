@@ -15,6 +15,7 @@
 package comm
 
 import (
+	"fmt"
 	"io"
 	"os"
 	gopath "path"
@@ -104,6 +105,8 @@ type file struct {
 	ino   uint64
 	flags uint32
 	mode  uint32
+
+	refcnt uint32 // protected by client.fdlock
 
 	// dir only
 	dirp *dirStream
@@ -466,7 +469,6 @@ func CFSClose(cid int64, fd int) {
 	}
 	f := c.releaseFD(uint(fd))
 	if f != nil {
-		c.flush(f)
 		c.closeStream(f)
 	}
 }
@@ -713,6 +715,17 @@ func CFSFchmod(cid int64, fd int, mode uint32) int {
 	return statusOK
 }
 
+func CFSFhold(cid int64, fd int) int {
+	fmt.Printf("get streamer client %v fd %v\n", cid, fd)
+	c, exist := getClient(cid)
+	if !exist {
+		return -int(syscall.EINVAL)
+	}
+
+	c.holdFd(uint(fd))
+	return 0
+}
+
 // internals
 
 func (c *client) absPath(path string) string {
@@ -767,7 +780,7 @@ func (c *client) allocFD(ino uint64, flags, mode uint32) *file {
 		return nil
 	}
 	c.fdset.Set(fd)
-	f := &file{fd: fd, ino: ino, flags: flags, mode: mode}
+	f := &file{fd: fd, ino: ino, flags: flags, mode: mode, refcnt: 1}
 	c.fdmap[fd] = f
 	return f
 }
@@ -786,9 +799,24 @@ func (c *client) releaseFD(fd uint) *file {
 	if !ok {
 		return nil
 	}
+
+	f.refcnt--
+	c.flush(f)
+	if f.refcnt > 0 {
+		return nil
+	}
+
+	fmt.Printf("DEBUG: Remove fd %v from fdmap", fd)
 	delete(c.fdmap, fd)
 	c.fdset.Clear(fd)
 	return f
+}
+
+func (c *client) holdFd(fd uint) {
+	c.fdlock.Lock()
+	f := c.fdmap[fd]
+	f.refcnt++
+	c.fdlock.Unlock()
 }
 
 func (c *client) lookupPath(path string) (*proto.InodeInfo, error) {

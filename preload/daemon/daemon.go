@@ -547,6 +547,11 @@ func (task *Task) handleRequest(req *CtrlItem) {
 		}
 		fmt.Printf("DEBUG: write return %v\n", ret)
 
+	case HOLD_FILE:
+		var params *HoldFileParams = parseHoldFileParams(req.data[:])
+		ret = int64(comm.CFSFhold(task.Cid, params.fd))
+		fmt.Printf("DEBUG: cfs_hold_file %d return %v\n", params.fd, ret)
+
 	default:
 		log.LogErrorf("Unknown opcode %v", req.OpCode)
 		ret = int64(Errno(syscall.EINVAL))
