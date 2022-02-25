@@ -35,6 +35,7 @@ import (
 
 	"github.com/chubaofs/chubaofs/libsdk/comm"
 	"github.com/chubaofs/chubaofs/proto"
+	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/log"
 )
 
@@ -428,7 +429,10 @@ func (task *Task) ReadRequest() (*CtrlItem, error) {
 }
 
 func (task *Task) handleRequest(req *CtrlItem) {
-	var ret int64
+	var (
+		ret int64
+		err error
+	)
 
 	fmt.Printf("DEBUG: handle request reqid %v dataIdx %v doneIdx %v opcode %v\n", req.ReqId, req.DataIdx, req.DoneIdx, req.OpCode)
 	switch req.OpCode {
@@ -454,6 +458,53 @@ func (task *Task) handleRequest(req *CtrlItem) {
 		comm.CFSClose(task.Cid, params.fd)
 		ret = 0 // never fail
 		fmt.Printf("DEBUG: cfs_close %d return %v\n", params.fd, ret)
+
+	case READ:
+		var (
+			params     *RWParams
+			dataBuffer []*RWData
+			left       int
+			offs       int
+			rsize      int
+		)
+
+		if req.State&CtrlStateInlineData == CtrlStateInlineData {
+			params = parseRWParams(req.data[:], true)
+		} else {
+			params = parseRWParams(req.data[:], false)
+		}
+		fmt.Printf("DEBUG: fd %v size %v offs %v\n", params.hdr.fd, params.hdr.size, params.hdr.offs)
+		if dataBuffer, err = parseRWData(req, task.queueArray.data, params); err != nil {
+			log.LogErrorf("Unable to parse read data item: %v", err)
+			ret = int64(Errno(syscall.EINVAL))
+			break
+		}
+		fmt.Printf("DEBUG: dataBuffer entries: %v\n", len(dataBuffer))
+		left = int(params.hdr.size)
+		offs = int(params.hdr.offs)
+		for _, buf := range dataBuffer {
+			bufSize := util.Min(left, len(buf.data))
+			fmt.Printf("DEBUG: read data size %v from offs %v\n", bufSize, offs)
+			n := comm.CFSRead(task.Cid, int(params.hdr.fd), buf.data[offs:bufSize], offs)
+			if n < 0 {
+				log.LogErrorf("Failed to read %v", req.OpCode)
+				fmt.Printf("Error: failed to read: %v\n", n)
+				ret = int64(n)
+				break
+			} else if n < bufSize {
+				fmt.Printf("DEBUG: data is not fully filled %v %s\n", n, string(buf.data))
+				rsize += n
+				break
+			} else { // n == bufSize
+				rsize += n
+				left -= n
+				offs += n
+			}
+		}
+		if rsize > 0 {
+			ret = int64(rsize)
+		}
+		fmt.Printf("DEBUG: read return %v\n", ret)
 
 	default:
 		log.LogErrorf("Unknown opcode %v", req.OpCode)

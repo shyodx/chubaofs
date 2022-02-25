@@ -477,6 +477,7 @@ func CFSWrite(cid int64, fd int, buffer []byte, off int) int {
 		wait  bool
 	)
 
+	fmt.Printf("DEBUG: cid %v fd %v bufLen %v off %v\n", cid, fd, len(buffer), off)
 	c, exist := getClient(cid)
 	if !exist {
 		return statusEINVAL
