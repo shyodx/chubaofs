@@ -144,4 +144,5 @@ out:
 static __exit void cleanup(void)
 {
 	pr_debug("Start cleanup all clients\n");
+	destroy_all_clients();
 }

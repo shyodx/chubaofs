@@ -48,5 +48,6 @@ struct open_fd {
 int append_fd_map_set(struct client_info *ci);
 int map_fd(struct client_info *ci, struct queue_info *queue_array[QUEUE_TYPE_NR], int real_fd, int expected_fd, int64_t cid);
 int get_opened_fd(struct client_info *ci, struct list_head *head);
+void destroy_fd_map_set_nolock(struct client_info *ci);
 
 #endif

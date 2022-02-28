@@ -95,6 +95,20 @@ int append_fd_map_set(struct client_info *ci)
 	return 0;
 }
 
+void destroy_fd_map_set_nolock(struct client_info *ci)
+{
+	struct fd_map_set *fds, *next;
+
+	if (ci == NULL)
+		return;
+
+	list_for_each_entry_safe(fds, next, &ci->fd_map_set_list, fds_link) {
+		pr_debug("free fds %d\n", fds->start_fd);
+		list_del(&fds->fds_link);
+		free(fds);
+	}
+}
+
 int get_opened_fd(struct client_info *ci, struct list_head *head)
 {
 	pid_t pid = getpid();

@@ -20,6 +20,7 @@
 #include <errno.h>
 
 #include "client.h"
+#include "fd_map.h"
 #include "list.h"
 #include "log.h"
 
@@ -94,6 +95,31 @@ int append_mountpoint(struct client_info *ci, const char *mnt_fsname, const char
 	return 0;
 }
 
+static void destroy_mountpoints_nolock(struct client_info *ci)
+{
+	struct mountpoint *mnt, *next;
+
+	if (ci == NULL)
+		return;
+
+	list_for_each_entry_safe(mnt, next, &ci->mountpoint_list, mountpoint_link) {
+		pr_debug("free mountpoint %s client %"PRId64"\n", MNT_DIR(mnt), mnt->cid);
+		int refcnt = atomic_load(&mnt->refcnt);
+		if (refcnt != 0)
+			pr_warn("mountpoint %s client %"PRId64" refcnt %d is still busy\n",
+				MNT_DIR(mnt), mnt->cid, refcnt);
+		list_del(&mnt->mountpoint_link);
+		// FIXME: need tell fuse client to munmap
+		//cfs_close_client(mnt->cid);
+		free(mnt->config.master_addr);
+		free(mnt->config.volname);
+		free(mnt->config.log_dir);
+		free(mnt->config.log_level);
+		free(mnt->config.follower_read);
+		free(mnt);
+	}
+}
+
 struct client_info *alloc_client(const char *fstype, pid_t pid)
 {
 	struct client_info *ci;
@@ -126,6 +152,49 @@ struct client_info *alloc_client(const char *fstype, pid_t pid)
 free_out:
 	free(ci);
 	return NULL;
+}
+
+int unregister_client(struct client_info *ci);
+
+void destroy_client(struct client_info *ci)
+{
+	if (ci == NULL)
+		return;
+
+	/*
+	 * It's safe to call list_del multiple times. destroy_client() could
+	 * be called alone, so we should keep list_del here.
+	 */
+	//pthread_rwlock_wrlock(&client_list_lock);
+	//list_del_init(&ci->client_link);
+	//pthread_rwlock_unlock(&client_list_lock);
+
+	pthread_rwlock_wrlock(&ci->rwlock);
+	destroy_fd_map_set_nolock(ci);
+	unregister_client(ci);
+	destroy_mountpoints_nolock(ci);
+	pthread_rwlock_unlock(&ci->rwlock);
+
+	pr_debug("Free client %"PRId64"\n", ci->appid);
+	free(ci);
+}
+
+void destroy_all_clients(void)
+{
+	destroy_client(gci);
+	//struct client_info *ci, *next;
+
+	//pthread_rwlock_wrlock(&client_list_lock);
+	//while (!list_empty(&client_list)) {
+	//	ci = list_first_entry(&client_list, struct client_info, client_link);
+	//	list_del_init(&ci->client_link);
+	//	pthread_rwlock_unlock(&client_list_lock);
+
+	//	destroy_client(ci);
+
+	//	pthread_rwlock_wrlock(&client_list_lock);
+	//}
+	//pthread_rwlock_unlock(&client_list_lock);
 }
 
 int unregister_client(struct client_info *ci)
