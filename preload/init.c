@@ -52,6 +52,7 @@ static int init_orig_apis(void)
 	SAVE_ORIG(close);
 	SAVE_ORIG(read);
 	SAVE_ORIG(write);
+	SAVE_ORIG(ftruncate);
 
 	return 0;
 }

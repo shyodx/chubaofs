@@ -60,6 +60,7 @@ struct orig_apis {
 	int(*close)(int fd);
 	ssize_t(*read)(int fd, void *buf, size_t count);
 	ssize_t(*write)(int fd, const void *buf, size_t count);
+	int(*ftruncate)(int fd, off_t length);
 };
 
 extern struct orig_apis orig_apis;

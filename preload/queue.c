@@ -130,7 +130,7 @@ static int init_queue_shm(struct queue_info *queue)
 	/* FIXME: need a warning if shm_size too large? */
 
 	/* FIXME: shall we truncate to 0 first to make sure file content is all zero? */
-	ret = ftruncate(fd, shm_size);
+	ret = orig_apis.ftruncate(fd, shm_size);
 	if (ret < 0) {
 		pr_error("Failed to truncate shm file %s: %d\n", queue->name, errno);
 		orig_apis.close(fd);
