@@ -162,6 +162,11 @@ struct data_item {
 	char data[DATA_DATA_SIZE];	// contains params and data according to opcode
 };
 
+#define for_each_data_item(queue, item, start)		\
+	for ((item) = queue_item(queue, start);		\
+	     (item) != NULL;				\
+	     (item) = queue_item(queue, (item)->next))
+
 static inline void init_data_item(struct data_item *item,
 				  uint64_t req_id, uint32_t opcode/*,
 				  uint32_t size*/)

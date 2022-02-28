@@ -50,6 +50,7 @@ static int init_orig_apis(void)
 {
 	SAVE_ORIG(open);
 	SAVE_ORIG(close);
+	SAVE_ORIG(read);
 
 	return 0;
 }

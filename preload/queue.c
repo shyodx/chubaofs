@@ -289,7 +289,7 @@ int queue_unregister(int sockfd, uint64_t id)
 	}
 	pr_debug("write data %d bytes to server\n", ret);
 
-	ret = read(sockfd, data, sizeof(data));
+	ret = orig_apis.read(sockfd, data, sizeof(data));
 	if (ret < 0) {
 		pr_error("Failed to read data from socket: %d\n", errno);
 		return ret;
@@ -371,7 +371,7 @@ int queue_register(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], ui
 	pr_debug("write data %d bytes to server\n", ret);
 
 	assert(size > sizeof(uint64_t));
-	ret = read(sockfd, out_data, size);
+	ret = orig_apis.read(sockfd, out_data, size);
 	if (ret < 0) {
 		pr_error("Failed to read data from socket: %d\n", errno);
 		free(out_data);

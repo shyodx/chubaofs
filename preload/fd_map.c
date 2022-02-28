@@ -311,3 +311,70 @@ int unmap_fd(struct client_info *ci, int fd, struct fd_map *map)
 
 	return 0;
 }
+
+int query_fd(struct client_info *ci, int fd, struct fd_map *map)
+{
+	struct fd_map_set *fds;
+	int ret = -EBADF;
+
+	if (ci == NULL)
+		return -EINVAL;
+	if (fd < 0)
+		return -EBADF;
+
+	pthread_rwlock_rdlock(&ci->rwlock);
+	list_for_each_entry(fds, &ci->fd_map_set_list, fds_link) {
+		if (fds->start_fd > fd || fds->start_fd + FD_PER_SET <= fd)
+			continue;
+		if (map != NULL) {
+			int offs = fd - fds->start_fd;
+			map->real_fd = fds->fd_maps[offs].real_fd;
+			map->offset = fds->fd_maps[offs].offset;
+			map->cid = fds->fd_maps[offs].cid;
+			for (int type = 0; type < QUEUE_TYPE_NR; type++)
+				map->queue_array[type] = fds->fd_maps[offs].queue_array[type];
+		}
+		ret = 0;
+		break;
+	}
+	pthread_rwlock_unlock(&ci->rwlock);
+
+	return ret;
+}
+
+int update_fd(struct client_info *ci, int fd, struct fd_map *map)
+{
+	struct fd_map_set *fds;
+	int ret = -EBADF;
+
+	if (ci == NULL || map == NULL)
+		return -EINVAL;
+	if (fd < 0)
+		return -EBADF;
+
+	pthread_rwlock_wrlock(&ci->rwlock);
+	list_for_each_entry(fds, &ci->fd_map_set_list, fds_link) {
+		//if (fd >= start_fd + FD_PER_SET) for sorted fd_map_set
+		if (fds->start_fd > fd || fds->start_fd + FD_PER_SET <= fd)
+			continue;
+
+		int offs = fd - fds->start_fd;
+		if (fds->fd_maps[offs].real_fd < 0 ||
+		    fds->fd_maps[offs].real_fd != map->real_fd ||
+		    fds->fd_maps[offs].cid != map->cid) {
+			ret = -EBADF;
+			break;
+		}
+		/*
+		 * real_fd & cid cannot be modified.
+		 * NOTE that, offset can be overwrite by another concurrency task.
+		 */
+		fds->fd_maps[offs].offset = map->offset;
+
+		ret = 0;
+		break;
+	}
+	pthread_rwlock_unlock(&ci->rwlock);
+
+	return ret;
+}
