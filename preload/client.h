@@ -48,6 +48,7 @@ struct mountpoint {
 	atomic_int refcnt;
 	struct cfs_config config;
 	struct list_head mountpoint_link;
+	struct queue_info *queue_array[QUEUE_TYPE_NR];
 	struct fsname_dir fsname_dir;
 };
 

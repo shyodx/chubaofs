@@ -26,6 +26,7 @@ struct fd_map {
 	int real_fd;
 	off_t offset;
 	int64_t cid;
+	struct queue_info *queue_array[QUEUE_TYPE_NR];
 };
 
 struct fd_map_set {
