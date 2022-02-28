@@ -75,5 +75,11 @@ void destroy_client(struct client_info *ci);
 void destroy_all_clients(void);
 int register_client(struct client_info *ci);
 int append_mountpoint(struct client_info *ci, const char *mnt_fsname, const char *mnt_dir);
+struct mountpoint *get_mountpoint(struct client_info *ci, const char *path);
+void put_mountpoint(struct mountpoint *mnt);
+struct client_info *__get_client(pid_t pid, const char *func, int line);
+void put_client(struct client_info *ci);
+
+#define get_client(pid) __get_client(pid, __func__, __LINE__)
 
 #endif

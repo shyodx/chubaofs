@@ -154,6 +154,45 @@ free_out:
 	return NULL;
 }
 
+struct client_info *__get_client(pid_t pid, const char *func, int line)
+{
+	struct client_info *ci = gci;
+	//bool found = false;
+
+	assert(ci->pid == pid);
+	atomic_fetch_add(&ci->refcnt, 1);
+
+	//pthread_rwlock_rdlock(&client_list_lock);
+	//list_for_each_entry(ci, &client_list, client_link) {
+	//	if (ci->pid != pid)
+	//		continue;
+
+	//	atomic_fetch_add(&ci->refcnt, 1);
+	//	found = true;
+	//	break;
+	//}
+	//pthread_rwlock_unlock(&client_list_lock);
+
+	//if (!found) {
+	//	pr_error("pid %d is not in client list! Caller %s:%d\n", pid, func, line);
+	//	assert(false);
+	//}
+
+	return ci;
+}
+
+void put_client(struct client_info *ci)
+{
+	int refcnt;
+
+	if (ci == NULL)
+		return;
+
+	refcnt = atomic_fetch_sub(&ci->refcnt, 1);
+	/* how to deal with refcnt that decreases to 0 */
+	refcnt = refcnt;
+}
+
 int unregister_client(struct client_info *ci);
 
 void destroy_client(struct client_info *ci)
@@ -295,4 +334,39 @@ int register_client(struct client_info *ci)
 
 	pr_debug("Register client %"PRId64"\n", ci->appid);
 	return 0;
+}
+
+struct mountpoint *get_mountpoint(struct client_info *ci, const char *path)
+{
+	struct mountpoint *mnt;
+	size_t mnt_len;
+	int64_t cid = -1;
+
+	pthread_rwlock_rdlock(&ci->rwlock);
+	list_for_each_entry(mnt, &ci->mountpoint_list, mountpoint_link) {
+		mnt_len = strlen(MNT_DIR(mnt));
+		/* if we are accessing the root of cfs, mnt_len == path_len */
+		if (mnt_len > strlen(path))
+			continue;
+		if (!memcmp(MNT_DIR(mnt), path, mnt_len) &&
+		    (path[mnt_len] == '\0' || path[mnt_len] == '/')) {
+			atomic_fetch_add(&mnt->refcnt, 1);
+			cid = mnt->cid;
+			break;
+		}
+	}
+	pthread_rwlock_unlock(&ci->rwlock);
+
+	if (cid == -1) {
+		return NULL;
+	}
+
+	return mnt;
+}
+
+void put_mountpoint(struct mountpoint *mnt)
+{
+	if (mnt == NULL)
+		return;
+	atomic_fetch_sub(&mnt->refcnt, 1);
 }

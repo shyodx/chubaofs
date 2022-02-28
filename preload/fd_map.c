@@ -270,3 +270,44 @@ int map_fd(struct client_info *ci, struct queue_info *queue_array[QUEUE_TYPE_NR]
 	return ret;
 }
 
+/* Return the real_fd of fd */
+int unmap_fd(struct client_info *ci, int fd, struct fd_map *map)
+{
+	struct fd_map_set *fds;
+
+	pthread_rwlock_wrlock(&ci->rwlock);
+	list_for_each_entry(fds, &ci->fd_map_set_list, fds_link) {
+		if (fds->start_fd > fd || fds->start_fd + FD_PER_SET <= fd)
+			continue;
+
+		int offs = fd - fds->start_fd;
+		if (fds->fd_maps[offs].real_fd == -1) {
+			pr_debug("fd %d is not alloced\n", fd);
+			pthread_rwlock_unlock(&ci->rwlock);
+			return -EBADF;
+		}
+
+		pr_debug("free fd %d for real_fd %d cid %"PRId64" from fds %d\n",
+			 fd, fds->fd_maps[offs].real_fd,
+			 fds->fd_maps[offs].cid, fds->start_fd);
+		if (map != NULL) {
+			map->real_fd = fds->fd_maps[offs].real_fd;
+			map->cid = fds->fd_maps[offs].cid;
+			for (int type = 0; type < QUEUE_TYPE_NR; type++)
+				map->queue_array[type] = fds->fd_maps[offs].queue_array[type];
+		}
+		fds->fd_maps[offs].real_fd = -1;
+		fds->fd_maps[offs].cid = -1;
+		for (int type = 0; type < QUEUE_TYPE_NR; type++)
+			fds->fd_maps[offs].queue_array[type] = NULL;
+		fds->free_nr++;
+
+		ci->total_free_fd_nr++;
+
+		break;
+	}
+
+	pthread_rwlock_unlock(&ci->rwlock);
+
+	return 0;
+}

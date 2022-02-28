@@ -193,6 +193,11 @@ int queue_create(enum queue_type type, unsigned int nmemb_order, struct queue_in
 int queue_register(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], uint64_t *id);
 int queue_unregister(int sockfd, uint64_t id);
 void queue_destroy(struct queue_info *queue);
+int queue_get_items(struct queue_info *queue_array[QUEUE_TYPE_NR], struct queue_item_params *params);
+void queue_put_items(struct queue_info *queue_array[QUEUE_TYPE_NR], struct ctrl_item *item);
+int queue_poll_item(struct queue_info *ctrl_queue, struct done_item *item);
+void queue_mark_item_ready(struct ctrl_item *item);
+void *queue_item(struct queue_info *queue, uint32_t idx);
 
 int connect_to_daemon(const char *fsname);
 int disconnect_to_daemon(int sockfd);

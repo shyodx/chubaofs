@@ -12,6 +12,8 @@
 // implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
+#define _GNU_SOURCE
+#include <dlfcn.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +24,7 @@
 #include "client.h"
 #include "common.h"
 #include "fd_map.h"
+#include "apis.h"
 #include "list.h"
 #include "log.h"
 
@@ -29,6 +32,27 @@
 #define __exit __attribute__((destructor))
 
 struct client_info *gci = NULL;
+
+struct orig_apis orig_apis = {NULL};
+
+#define STR(x) #x
+#define SAVE_ORIG(_name) do {						\
+	orig_apis._name = dlsym(RTLD_NEXT, STR(_name));			\
+	if (orig_apis._name == NULL) {					\
+		int err = -errno;					\
+		pr_error("Failed to get orignal %s function: %s\n",	\
+			 STR(_name), strerror(errno));			\
+		return err;						\
+	}								\
+} while (0)
+
+static int init_orig_apis(void)
+{
+	SAVE_ORIG(open);
+	SAVE_ORIG(close);
+
+	return 0;
+}
 
 static int get_cfs_mount_info(struct client_info *ci)
 {
@@ -82,6 +106,10 @@ static __init void init(void)
 	int ret;
 
 	pr_debug("Start init for pid %d\n", pid);
+
+	ret = init_orig_apis();
+	if (ret < 0)
+		goto out;
 
 	ci = alloc_client(FSTYPE, pid);
 	if (ci == NULL) {

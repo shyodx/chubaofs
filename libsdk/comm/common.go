@@ -463,6 +463,7 @@ func CFSFlush(cid int64, fd int) int {
 }
 
 func CFSClose(cid int64, fd int) {
+	fmt.Printf("DEBUG: cid %v fd %v close\n", cid, fd)
 	c, exist := getClient(cid)
 	if !exist {
 		return

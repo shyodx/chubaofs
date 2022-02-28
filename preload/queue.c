@@ -21,6 +21,7 @@
 #include <time.h>
 #include <stddef.h>
 #include <stdatomic.h>
+#include <sched.h>
 #include <errno.h>
 
 #include <sys/stat.h>
@@ -31,6 +32,7 @@
 
 #include "common.h"
 #include "queue.h"
+#include "apis.h"
 #include "log.h"
 
 struct queue_attr {
@@ -131,7 +133,7 @@ static int init_queue_shm(struct queue_info *queue)
 	ret = ftruncate(fd, shm_size);
 	if (ret < 0) {
 		pr_error("Failed to truncate shm file %s: %d\n", queue->name, errno);
-		close(fd);
+		orig_apis.close(fd);
 		shm_unlink(queue->name);
 		return ret;
 	}
@@ -146,7 +148,7 @@ static int init_queue_shm(struct queue_info *queue)
 		ret = -errno;
 		pr_error("Failed to mmap file %s size %zu: %d\n",
 			 queue->name, shm_size, errno);
-		close(fd);
+		orig_apis.close(fd);
 		shm_unlink(queue->name);
 		return ret;
 	}
@@ -164,7 +166,7 @@ static int init_queue_shm(struct queue_info *queue)
 	}
 
 	/* unlink shm file after register queue successfully */
-	close(fd);
+	orig_apis.close(fd);
 
 	return 0;
 }
@@ -399,6 +401,251 @@ int queue_register(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], ui
 	return 0;
 }
 
+static int find_items(struct queue_info *queue, int nr, uint32_t *start)
+{
+	int alloced = 0;
+	uint32_t prev_idx = 0, idx;
+	int loop = 0;
+
+	pr_debug("queue type %d nr %d next %u used %u members %u\n", queue->type, nr, queue->next, queue->used, queue->members);
+
+	assert(queue->type == DATA_QUEUE || (queue->type == DONE_QUEUE && nr == 1));
+
+	pthread_mutex_lock(&queue->mutex);
+	while (queue->used == queue->members) {
+		pr_debug("queue[%d] is full used %"PRIu32" try again %d",
+			 queue->type, queue->used, loop++);
+		pthread_cond_wait(&queue->cond, &queue->mutex);
+	}
+
+	while (queue->used < queue->members && alloced < nr) {
+		idx = find_next_zero_bit(queue->bitmap, queue->next, queue->members);
+		if (idx == queue->members) {
+			/* hit the end of bitmap */
+			idx = find_first_zero_bit(queue->bitmap, queue->members);
+		}
+		if (idx == queue->members)
+			break;
+		if (queue->type == DATA_QUEUE) {
+			struct data_item *array = (struct data_item *)queue->data;
+			array[idx].next = alloced == 0 ? DATA_SLOT_END : prev_idx;
+		}
+		set_bit(queue->bitmap, idx);
+		alloced++;
+		queue->used++;
+		queue->next = (idx + 1) & queue->mask; // FIXME: +1 or not, need check where find_next_zero starts
+		prev_idx = idx;
+	}
+	*start = prev_idx;
+	pr_debug("queue type %d get free slot %u alloced %d expected %d\n",
+		 queue->type, *start, alloced, nr);
+	pthread_mutex_unlock(&queue->mutex);
+	return alloced;
+}
+
+static void free_items(struct queue_info *queue, uint32_t start)
+{
+	uint32_t next;
+
+	assert(queue->type != CTRL_QUEUE);
+
+	pthread_mutex_lock(&queue->mutex);
+	if (queue->type == DONE_QUEUE) {
+		assert(test_bit(queue->bitmap, start));
+		clear_bit(queue->bitmap, start);
+		queue->used--;
+	} else {
+		struct data_item *array = (struct data_item *)queue->data;
+		uint64_t req_id = array[start].req_id;
+		do {
+			assert(test_bit(queue->bitmap, start));
+			assert(req_id == array[start].req_id);
+			req_id = array[start].req_id;
+			next = array[start].next;
+			clear_bit(queue->bitmap, start);
+			queue->used--;
+			start = next;
+		} while (start != DATA_SLOT_END);
+	}
+	pthread_mutex_unlock(&queue->mutex);
+}
+
+static int find_next_item(struct queue_info *queue, uint32_t *idx)
+{
+	uint32_t head, tail;
+	int loop = 0;
+
+	assert(queue->type == CTRL_QUEUE);
+
+	pthread_mutex_lock(&queue->mutex);
+
+	head = READ_ONCE(*queue->hdr.head);
+	tail = READ_ONCE(*queue->hdr.tail);
+	while (IS_FULL(head, tail, queue->members)) {
+		pr_debug("queue[%d] is full head %"PRIu32" tail %"PRIu32", try again %d\n",
+			 queue->type, head, tail, loop++);
+		pthread_cond_wait(&queue->cond, &queue->mutex);
+		head = READ_ONCE(*queue->hdr.head);
+		tail = READ_ONCE(*queue->hdr.tail);
+	}
+
+	*idx = tail & queue->mask;
+	tail++;
+
+	WRITE_ONCE(*queue->hdr.tail, tail);
+
+	pr_debug("queue[%d] get item %u\n", queue->type, *idx);
+
+	pthread_mutex_unlock(&queue->mutex);
+	return 0;
+}
+
+static void put_item(struct queue_info *queue)
+{
+	uint32_t head, tail;
+	assert(queue->type == CTRL_QUEUE);
+
+	pthread_mutex_lock(&queue->mutex);
+
+	head = READ_ONCE(*queue->hdr.head);
+	tail = READ_ONCE(*queue->hdr.tail);
+	if (IS_EMPTY(head, tail)) {
+		pr_error("queue[%d] is empty? head/tail %"PRIu32"\n",
+			 queue->type, head);
+		assert(0);
+	}
+
+	head++;
+	WRITE_ONCE(*queue->hdr.head, head);
+
+	pthread_mutex_unlock(&queue->mutex);
+	pthread_cond_signal(&queue->cond);
+}
+
+/* FIXME: queue must be referenced to avoid being unmapped? */
+int queue_get_items(struct queue_info *queue_array[QUEUE_TYPE_NR], struct queue_item_params *params)
+{
+	struct queue_info *ctrl, *data, *done; 
+	uint32_t ctrl_idx, data_idx, done_idx;
+	int ret;
+
+	if (queue_array == NULL || params == NULL) {
+		pr_error("Invalid params: queue_array %s params %s\n",
+			 queue_array == NULL ? "(null)" : "valid",
+			 params == NULL ? "(null)" : "valid");
+		return -EINVAL;
+	}
+
+	ctrl = queue_array[CTRL_QUEUE];
+	data = queue_array[DATA_QUEUE];
+	done = queue_array[DONE_QUEUE];
+	if (ctrl == NULL || data == NULL || done == NULL) {
+		pr_error("Invalid params: ctrl %s data %s done %s\n",
+			 ctrl == NULL ? "(null)" : "valid",
+			 data == NULL ? "(null)" : "valid",
+			 done == NULL ? "(null)" : "valid");
+		return -EINVAL;
+	}
+
+	if (params->data_expected) {
+		ret = find_items(data, params->data_expected, &data_idx);
+		if (ret < 0) {
+			pr_error("Not enough slots in data queue\n");
+			return ret;
+		}
+
+		params->data_alloced = ret;
+		params->data_idx = data_idx;
+	}
+
+	ret = find_items(done, 1, &done_idx);
+	if (ret <= 0) {
+		pr_error("Not enough slots in done queue\n");
+		free_items(data, data_idx);
+		return ret;
+	}
+	params->done_idx = done_idx;
+
+	ret = find_next_item(ctrl, &ctrl_idx);
+	if (ret < 0) {
+		pr_error("Ctrl queue is full\n");
+		free_items(done, done_idx);
+		free_items(data, data_idx);
+		return ret;
+	}
+	params->ctrl_idx = ctrl_idx;
+
+	return 0;
+}
+
+void queue_put_items(struct queue_info *queue_array[QUEUE_TYPE_NR], struct ctrl_item *item)
+{
+	if (item == NULL)
+		return;
+
+	if (item->state & CTRL_STATE_DATA_ITEM) {
+		pr_debug("Req[%"PRIu64"] free data items from %u\n", item->req_id, item->data_idx);
+		free_items(queue_array[DATA_QUEUE], item->data_idx);
+	}
+
+	pr_debug("Req[%"PRIu64"] free done item %u\n", item->req_id, item->done_idx);
+	free_items(queue_array[DONE_QUEUE], item->done_idx);
+
+	pr_debug("Req[%"PRIu64"] put ctrl item\n", item->req_id);
+	put_item(queue_array[CTRL_QUEUE]);
+}
+
+int queue_poll_item(struct queue_info *queue, struct done_item *item)
+{
+	int ret = 0;
+	assert(queue->type == CTRL_QUEUE);
+
+	while (1) {
+		/* FIXME: atomic load? */
+		uint32_t done_state = READ_ONCE(item->state);
+		if (done_state == DONE_STATE_READY) {
+			print_done_item(item);
+			return item->retval;
+		}
+
+		sched_yield();
+		//pr_debug("Req[%"PRIu64"] poll done item state %u\n", item->req_id, item->state);
+		//sleep(1);
+	}
+	return ret;
+}
+
+void queue_mark_item_ready(struct ctrl_item *item)
+{
+	uint32_t state;
+
+	state = item->state | CTRL_STATE_READY;
+	/* FIXME: atomic set? need barrier? */
+	WRITE_ONCE(item->state, state);
+}
+
+void *queue_item(struct queue_info *queue, uint32_t idx)
+{
+	void *item = NULL;
+
+	if (idx >= queue->members)
+		return NULL;
+
+	switch (queue->type) {
+	case CTRL_QUEUE:
+		item = (void *)(&((struct ctrl_item *)queue->data)[idx]);
+		break;
+	case DATA_QUEUE:
+		item = (void *)(&((struct data_item *)queue->data)[idx]);
+		break;
+	case DONE_QUEUE:
+		item = (void *)(&((struct done_item *)queue->data)[idx]);
+		break;
+	}
+
+	return item;
+}
+
 int connect_to_daemon(const char *fsname)
 {
 	struct sockaddr_un addr;
@@ -427,5 +674,5 @@ int connect_to_daemon(const char *fsname)
 
 int disconnect_to_daemon(int sockfd)
 {
-	return close(sockfd);
+	return orig_apis.close(sockfd);
 }
