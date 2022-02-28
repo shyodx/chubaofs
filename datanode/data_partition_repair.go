@@ -512,8 +512,8 @@ repairMore:
 		return nil
 	}
 	// size difference between the local extent and the remote extent
+	var request *repl.Packet
 	sizeDiff := remoteExtentInfo.Size - localExtentInfo.Size
-	request := repl.NewExtentRepairReadPacket(dp.partitionID, remoteExtentInfo.FileID, int(localExtentInfo.Size), int(sizeDiff))
 	if storage.IsTinyExtent(remoteExtentInfo.FileID) {
 		// if the area of [offs, offs + sizeDiff] locates in a hole,
 		// the real repair size could be larger than sizeDiff
@@ -521,6 +521,8 @@ repairMore:
 			sizeDiff = math.MaxUint32 - util.MB
 		}
 		request = repl.NewTinyExtentRepairReadPacket(dp.partitionID, remoteExtentInfo.FileID, int(localExtentInfo.Size), int(sizeDiff))
+	} else {
+		request = repl.NewExtentRepairReadPacket(dp.partitionID, remoteExtentInfo.FileID, int(localExtentInfo.Size), int(sizeDiff))
 	}
 
 	if err = request.WriteToConn(conn); err != nil {
