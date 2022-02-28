@@ -276,8 +276,6 @@ func (policy *UserPolicy) Copy() (newUserPolicy *UserPolicy) {
 	return
 }
 
-
-
 func removeSlice(s []string, removeSlice []string) []string {
 	if len(s) == 0 {
 		return s
