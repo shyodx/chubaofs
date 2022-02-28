@@ -19,6 +19,8 @@
 #include <stdbool.h>
 
 #include "list.h"
+#include "client.h"
+#include "queue.h"
 
 #define FD_PER_SET 64
 
@@ -36,6 +38,15 @@ struct fd_map_set {
 	struct list_head fds_link;
 };
 
+struct open_fd {
+	int fd;
+	struct list_head link;
+};
+
 #define IS_CFS_FD(map) ((map)->cid >= 0)
+
+int append_fd_map_set(struct client_info *ci);
+int map_fd(struct client_info *ci, struct queue_info *queue_array[QUEUE_TYPE_NR], int real_fd, int expected_fd, int64_t cid);
+int get_opened_fd(struct client_info *ci, struct list_head *head);
 
 #endif

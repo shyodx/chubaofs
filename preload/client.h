@@ -20,6 +20,7 @@
 #include <inttypes.h>
 
 #include "list.h"
+#include "queue.h"
 
 extern struct client_info *gci;
 
@@ -68,4 +69,8 @@ struct client_info {
 
 	char fstype[0]; /* KEEP IT AS THE LAST ELEMENT */
 };
+
+struct client_info *alloc_client(const char *fstype, pid_t pid);
+int append_mountpoint(struct client_info *ci, const char *mnt_fsname, const char *mnt_dir);
+
 #endif
