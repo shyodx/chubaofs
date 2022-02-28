@@ -54,6 +54,9 @@ static int init_orig_apis(void)
 	SAVE_ORIG(write);
 	SAVE_ORIG(ftruncate);
 	SAVE_ORIG(unlink);
+	SAVE_ORIG(fork);
+	SAVE_ORIG(vfork);
+	SAVE_ORIG(clone);
 
 	return 0;
 }

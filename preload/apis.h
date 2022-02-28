@@ -62,6 +62,10 @@ struct orig_apis {
 	ssize_t(*write)(int fd, const void *buf, size_t count);
 	int(*ftruncate)(int fd, off_t length);
 	int(*unlink)(const char *path);
+	pid_t(*fork)(void);
+	pid_t(*vfork)(void);
+	int(*clone)(int (*fn)(void *), void *stack, int flags, void *arg, ...
+		    /* pid_t *parent_tid, void *tls, pid_t *child_tid */ );
 };
 
 extern struct orig_apis orig_apis;
