@@ -282,7 +282,7 @@ int queue_unregister(int sockfd, uint64_t id)
 	cmd.cmd = htobe16((uint16_t)QUEUE_CMD_UNREGISTER);
 	cmd.unreg_id = htobe64((uint64_t)id);
 
-	ret = write(sockfd, &cmd, sizeof(cmd));
+	ret = orig_apis.write(sockfd, &cmd, sizeof(cmd));
 	if (ret < 0) {
 		pr_error("Failed to write data to socket: %d\n", errno);
 		return ret;
@@ -362,7 +362,7 @@ int queue_register(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], ui
 		assert(offs <= size);
 	}
 
-	ret = write(sockfd, out_data, size);
+	ret = orig_apis.write(sockfd, out_data, size);
 	if (ret < 0) {
 		pr_error("Failed to write data to socket: %d\n", errno);
 		free(out_data);

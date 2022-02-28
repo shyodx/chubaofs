@@ -198,3 +198,141 @@ out:
 	SET_ERRNO(ret);
 	return ret < 0 ? -1 : ret;
 }
+
+static ssize_t cfs_write(int64_t cid, struct fd_map *map, const void *buf, size_t count)
+{
+	struct queue_info *ctrl = map->queue_array[CTRL_QUEUE];
+	struct queue_info *data = map->queue_array[DATA_QUEUE];
+	struct queue_info *done = map->queue_array[DONE_QUEUE];
+	struct ctrl_item *ctrl_item = NULL;
+	struct data_item *data_item = NULL;
+	struct done_item *done_item = NULL;
+	uint64_t req_id;
+	struct rw_params *write_params;
+	size_t params_size = sizeof(struct rw_params) + count;
+	struct queue_item_params item_params = {0};
+	ssize_t wsize = 0;
+	size_t left, copy_size;
+	int ret;
+
+	if (params_size > CTRL_DATA_SIZE) {
+		/* need data items to save read data */
+		item_params.data_expected = count / DATA_DATA_SIZE;
+		if (count % DATA_DATA_SIZE > 0)
+			item_params.data_expected++;
+		pr_debug("Expected %d data items\n", item_params.data_expected);
+	}
+
+	left = count;
+	while (left > 0) {
+		req_id = next_req_id();
+		pr_debug("Get Req[%"PRIu64"]\n", req_id);
+
+		ret = queue_get_items(map->queue_array, &item_params);
+		if (ret < 0)
+			return ret;
+
+		/* FIXME: how to restore alloced ctrl item if fail, add state to mark it as invalidate? */
+		ctrl_item = (struct ctrl_item *)queue_item(ctrl, item_params.ctrl_idx);
+		assert(ctrl_item->state == CTRL_STATE_NEW);
+		ctrl_item->req_id = req_id;
+		ctrl_item->opcode = CBFS_WRITE;
+		ctrl_item->data_idx = item_params.data_idx;
+		ctrl_item->done_idx = item_params.done_idx;
+		pr_debug("Req[%"PRIu64"] Get ctrl idx %u\n", req_id, item_params.ctrl_idx);
+
+		done_item = (struct done_item *)queue_item(done, item_params.done_idx);
+		init_done_item(done_item, req_id, CBFS_WRITE);
+		pr_debug("Req[%"PRIu64"] Get done idx %u\n", req_id, item_params.done_idx);
+
+		write_params = (struct rw_params *)ctrl_item->data;
+		write_params->fd = (uint32_t)map->real_fd;
+		write_params->count = (uint64_t)left;
+		write_params->offs = map->offset + wsize;
+		/* copy data from buffer */
+		copy_size = 0;
+		if (item_params.data_expected > 0) {
+			for_each_data_item(data, data_item, item_params.data_idx) {
+				init_data_item(data_item, req_id, CBFS_WRITE/*, params_size*/);
+				copy_size = min(left, DATA_DATA_SIZE);
+				memcpy(data_item->data, buf + wsize, copy_size);
+			}
+			ctrl_item->state |= CTRL_STATE_DATA_ITEM;
+			pr_debug("Req[%"PRIu64"] Get data idx %u\n", req_id, item_params.data_idx);
+		} else {
+			copy_size = min(left, CTRL_DATA_SIZE - sizeof(struct rw_params));
+			memcpy(write_params->data, buf + wsize, copy_size);
+			ctrl_item->state |= CTRL_STATE_INLINE_DATA;
+			pr_debug("Req[%"PRIu64"] Set ctrl idx %u inline data\n", req_id, item_params.ctrl_idx);
+		}
+
+		/* update ctrl state at the end of preparation */
+		queue_mark_item_ready(ctrl_item);
+		pr_debug("Req[%"PRIu64"] Mark ctrl idx %u ready\n", req_id, item_params.ctrl_idx);
+		//ctrl_item_tostring(ctrl_item, buf);
+
+		/* wait for done */
+		ret = queue_poll_item(ctrl, done_item);
+		pr_debug("Req[%"PRIu64"] ctrl idx %u done idx %u get return %d\n",
+			 req_id, item_params.ctrl_idx, item_params.done_idx, ret);
+		if (ret < 0) {
+			pr_error("Req[%"PRIu64"] write at offs %zd fail: %d\n", req_id, wsize, ret);
+			wsize = (ssize_t)ret;
+			break;
+		}
+		wsize += ret;
+		left -= ret;
+
+		queue_put_items(map->queue_array, ctrl_item);
+
+		if (left == 0)
+			break;
+
+		pr_debug("Left %zu byte, need write more\n", left);
+		memset(&item_params, 0, sizeof(struct queue_item_params));
+		if (sizeof(struct rw_params) + left > CTRL_DATA_SIZE) {
+			// FIXME: if DATA_DATA_SIZE is power of 2, we can use shift here
+			item_params.data_expected = left / DATA_DATA_SIZE;
+			if (left % DATA_DATA_SIZE > 0)
+				item_params.data_expected++;
+		}
+	}
+
+	return wsize;
+}
+
+ssize_t write(int fd, const void *buf, size_t count)
+{
+	struct client_info *ci = get_client(getpid());
+	struct fd_map map = {0};
+	ssize_t ret;
+
+	pr_debug("client %"PRId64" write fd %d\n", ci->appid, fd);
+
+	ret = (ssize_t)query_fd(ci, fd, &map);
+	if (ret < 0) {
+		pr_error("Failed to get real fd of fd %d: %s\n", fd, strerror((int)(-ret)));
+		goto out;
+	}
+
+	if (map.cid >= 0) {
+		pr_debug("fd %d real_fd %d offset %jd count %zu is in cfs path cid %"PRId64"\n",
+			 fd, map.real_fd, map.offset, count, map.cid);
+		ret = cfs_write(map.cid, &map, buf, count);
+	} else {
+		pr_debug("fd %d real_fd %d is NOT in cfs path\n",
+			 fd, map.real_fd);
+		ret = orig_apis.write(map.real_fd, buf, count);
+	}
+
+	pr_debug("write fd %d size %zd\n", fd, ret);
+	if (ret > 0) {
+		map.offset += ret;
+		update_fd(ci, fd, &map);
+	}
+
+out:
+	put_client(ci);
+	SET_ERRNO(ret);
+	return ret < 0 ? -1 : ret;
+}
