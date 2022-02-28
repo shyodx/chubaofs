@@ -19,8 +19,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"strconv"
+	"syscall"
 	"time"
 
 	"hash/crc32"
@@ -512,15 +514,18 @@ func (s *DataNode) handleExtentRepairReadPacket(p *repl.Packet, connect net.Conn
 		err error
 	)
 
+	partition := p.Object.(*DataPartition)
+
 	defer func() {
 		if err != nil {
 			p.PackErrorBody(ActionStreamRead, err.Error())
 			p.WriteToConn(connect)
-			fininshDoExtentRepair()
+		} else {
+			finishDoExtentRepair(partition)
 		}
 	}()
 
-	err = requestDoExtentRepair()
+	err = requestDoExtentRepair(partition)
 	if err != nil {
 		return
 	}
@@ -529,12 +534,34 @@ func (s *DataNode) handleExtentRepairReadPacket(p *repl.Packet, connect net.Conn
 }
 
 func (s *DataNode) handleTinyExtentRepairReadPacket(p *repl.Packet, connect net.Conn) {
+	var (
+		err error
+	)
+
+	partition := p.Object.(*DataPartition)
+
+	defer func() {
+		if err != nil {
+			p.PackErrorBody(ActionTinyStreamRead, err.Error())
+			p.WriteToConn(connect)
+		} else {
+			finishDoExtentRepair(partition)
+		}
+	}()
+
+	err = requestDoExtentRepair(partition)
+	if err != nil {
+		return
+	}
+
 	s.tinyExtentRepairRead(p, connect)
 }
 
 func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRepairRead bool) {
 	var (
-		err error
+		rblksize uint32
+		data     []byte
+		err      error
 	)
 	defer func() {
 		if err != nil {
@@ -542,53 +569,82 @@ func (s *DataNode) extentRepairReadPacket(p *repl.Packet, connect net.Conn, isRe
 			p.WriteToConn(connect)
 		}
 	}()
+
+	if isRepairRead {
+		rblksize = util.RepairReadBlockSize
+	} else {
+		rblksize = util.ReadBlockSize
+	}
+
 	partition := p.Object.(*DataPartition)
 	needReplySize := p.Size
 	offset := p.ExtentOffset
 	store := partition.ExtentStore()
 	metricPartitionIOLabels := GetIoMetricLabels(partition, "read")
 	for {
+		var needReleaseBuffer bool
+
 		if needReplySize <= 0 {
 			break
 		}
-		err = nil
 		reply := repl.NewStreamReadResponsePacket(p.ReqID, p.PartitionID, p.ExtentID)
 		reply.StartT = p.StartT
-		currReadSize := uint32(util.Min(int(needReplySize), util.ReadBlockSize))
-		if currReadSize == util.ReadBlockSize {
-			reply.Data, _ = proto.Buffers.Get(util.ReadBlockSize)
-		} else {
-			reply.Data = make([]byte, currReadSize)
+		currReadSize := uint32(util.Min(int(needReplySize), int(rblksize)))
+		err = syscall.EAGAIN
+		if currReadSize == rblksize {
+			data, err = proto.Buffers.Get(int(rblksize))
+			needReleaseBuffer = true
+		}
+		if err != nil {
+			data = make([]byte, currReadSize)
+			needReleaseBuffer = false
 		}
 		tpObject := exporter.NewTPCnt(fmt.Sprintf("Repair_%s", p.GetOpMsg()))
-		reply.ExtentOffset = offset
-		p.Size = uint32(currReadSize)
-		p.ExtentOffset = offset
 		partitionIOMetric := exporter.NewTPCnt(MetricPartitionIOName)
-		reply.CRC, err = store.Read(reply.ExtentID, offset, int64(currReadSize), reply.Data, isRepairRead)
-		s.metrics.MetricIOBytes.AddWithLabels(int64(p.Size), metricPartitionIOLabels)
+		reply.CRC, err = store.Read(reply.ExtentID, offset, int64(currReadSize), data, isRepairRead)
+		s.metrics.MetricIOBytes.AddWithLabels(int64(currReadSize), metricPartitionIOLabels)
 		partitionIOMetric.SetWithLabels(err, metricPartitionIOLabels)
 		partition.checkIsDiskError(err)
 		tpObject.Set(err)
-		p.CRC = reply.CRC
 		if err != nil {
+			if needReleaseBuffer {
+				proto.Buffers.Put(data)
+			}
 			return
 		}
-		reply.Size = uint32(currReadSize)
-		reply.ResultCode = proto.OpOk
-		reply.Opcode = p.Opcode
-		p.ResultCode = proto.OpOk
-		if err = reply.WriteToConn(connect); err != nil {
-			return
+
+		// split replying data into BlockSize pieces
+		var offsInData uint32
+		for {
+			replySize := uint32(util.Min(int(currReadSize), util.BlockSize))
+
+			reply.Data = data[offsInData : offsInData+replySize]
+			reply.ExtentOffset = offset
+			reply.Size = replySize
+			reply.ResultCode = proto.OpOk
+			reply.Opcode = p.Opcode
+			reply.CRC = crc32.ChecksumIEEE(reply.Data)
+			p.ResultCode = proto.OpOk
+			if err = reply.WriteToConn(connect); err != nil {
+				return
+			}
+
+			logContent := fmt.Sprintf("action[operatePacket] %v.",
+				reply.LogMessage(reply.GetOpMsg(), connect.RemoteAddr().String(), reply.StartT, err))
+			log.LogReadf(logContent)
+
+			offsInData += replySize
+			offset += int64(replySize)
+			needReplySize -= replySize
+			currReadSize -= replySize
+			if currReadSize == 0 {
+				break
+			}
 		}
-		needReplySize -= currReadSize
-		offset += int64(currReadSize)
-		if currReadSize == util.ReadBlockSize {
-			proto.Buffers.Put(reply.Data)
+
+		if needReleaseBuffer {
+			proto.Buffers.Put(data)
 		}
-		logContent := fmt.Sprintf("action[operatePacket] %v.",
-			reply.LogMessage(reply.GetOpMsg(), connect.RemoteAddr().String(), reply.StartT, err))
-		log.LogReadf(logContent)
 	}
 	p.PacketOkReply()
 
@@ -631,7 +687,11 @@ func (s *DataNode) writeEmptyPacketOnTinyExtentRepairRead(reply *repl.Packet, ne
 	reply.Arg[0] = EmptyResponse
 	binary.BigEndian.PutUint64(reply.Arg[1:9], uint64(replySize))
 	err = reply.WriteToConn(connect)
-	reply.Size = uint32(replySize)
+	if replySize < int64(math.MaxUint32) {
+		reply.Size = uint32(replySize)
+	} else {
+		reply.Size = math.MaxUint32
+	}
 	logContent := fmt.Sprintf("action[operatePacket] %v.",
 		reply.LogMessage(reply.GetOpMsg(), connect.RemoteAddr().String(), reply.StartT, err))
 	log.LogReadf(logContent)
@@ -691,9 +751,7 @@ func (s *DataNode) tinyExtentRepairRead(request *repl.Packet, connect net.Conn) 
 			return
 		}
 		if newOffset > offset {
-			var (
-				replySize int64
-			)
+			var replySize int64
 			if replySize, err = s.writeEmptyPacketOnTinyExtentRepairRead(reply, newOffset, offset, connect); err != nil {
 				return
 			}

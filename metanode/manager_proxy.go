@@ -74,11 +74,16 @@ func (m *metadataManager) serveProxy(conn net.Conn, mp MetaPartition,
 	m.connPool.PutConnect(mConn, NoClosedConnect)
 end:
 	m.respondToClient(conn, p)
-	msg := fmt.Sprintf("[serveProxy]: remote: %v partition id: %v req: %d - %v",
-		conn.RemoteAddr(), p.PartitionID, p.GetReqID(), p.GetOpMsg())
+	msg := fmt.Sprintf("[serveProxy]: remote: %v partition id: %v req: %d - %v, resp: %v",
+		conn.RemoteAddr(), p.PartitionID, p.GetReqID(), p.GetOpMsg(), p.GetResultMsg())
 	if err != nil {
 		log.LogErrorf("%v, err(%v)", msg, err)
 	}
-	log.LogDebug(msg)
+
+	if p.Opcode == proto.OpMetaDeleteDentry {
+		log.LogWrite(msg)
+	} else {
+		log.LogDebug(msg)
+	}
 	return
 }
