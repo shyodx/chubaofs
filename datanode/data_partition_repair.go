@@ -634,7 +634,7 @@ repairMore:
 		if err != nil {
 			return errors.Trace(err, "streamRepairExtent Watermark error")
 		}
-		time.Sleep(10*time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		goto repairMore
 	}
 	return
