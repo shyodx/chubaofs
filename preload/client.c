@@ -128,6 +128,44 @@ free_out:
 	return NULL;
 }
 
+int unregister_client(struct client_info *ci)
+{
+	struct mountpoint *mnt;
+	int sockfd;
+	int err;
+
+	pthread_rwlock_wrlock(&ci->rwlock);
+	list_for_each_entry(mnt, &ci->mountpoint_list, mountpoint_link) {
+		sockfd = connect_to_daemon(MNT_FSNAME(mnt));
+		if (sockfd < 0) {
+			err = sockfd;
+			break;
+		}
+
+		err = queue_unregister(sockfd, ci->appid);
+		if (err < 0) {
+			pr_error("Unregister client %"PRId64" on mnt %s fail: %d\n",
+				 ci->appid, MNT_FSNAME(mnt), err);
+			disconnect_to_daemon(sockfd);
+			break;
+		}
+
+		disconnect_to_daemon(sockfd);
+
+		for (int type = CTRL_QUEUE; type < QUEUE_TYPE_NR; type++)
+			queue_destroy(mnt->queue_array[type]);
+	}
+	pthread_rwlock_unlock(&ci->rwlock);
+
+	if (err < 0) {
+		pr_error("Failed to unregister client: %d\n", err);
+		return err;
+	}
+
+	pr_debug("Unregister client %"PRId64"\n", ci->appid);
+	return 0;
+}
+
 int register_client(struct client_info *ci)
 {
 	struct mountpoint *mnt;

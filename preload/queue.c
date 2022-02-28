@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stddef.h>
+#include <stdatomic.h>
 #include <errno.h>
 
 #include <sys/stat.h>
@@ -51,6 +52,7 @@ typedef uint32_t __be32;
 typedef uint64_t __be64;
 
 #define QUEUE_CMD_REGISTER_NEW		1
+#define QUEUE_CMD_UNREGISTER		3
 
 struct queue_info_ipc {
 	__be16 type;
@@ -69,9 +71,21 @@ struct queue_cmd_ipc {
 		struct {
 			__be64 rsvd3;
 		} __attribute__((packed));
+
+		/* for unregister */
+		struct {
+			__be64 unreg_id;	// which client to unregister
+		} __attribute__((packed));
 	};
 	char data[0];	// save all types of queue_info_ipc for register cmds
 } __attribute__((packed));
+
+#define WRITE_ONCE(var, val)						\
+	atomic_store_explicit((_Atomic __typeof__(var) *)&(var),	\
+			      (val), memory_order_relaxed)
+#define READ_ONCE(var)						\
+	atomic_load_explicit((_Atomic __typeof__(var) *)&(var),	\
+			     memory_order_relaxed)
 
 static inline void swap_be64_to_cpu(unsigned char *data)
 {
@@ -223,6 +237,81 @@ int queue_create(enum queue_type type, unsigned int nmemb_order, struct queue_in
 	*queue = q;
 
 	return ret;
+}
+
+void queue_destroy(struct queue_info *queue)
+{
+	if (queue == NULL)
+		return;
+
+	pr_debug("destroy queue %d addr %p name %s size %zu\n",
+		 queue->type, queue->addr, queue->name, queue->shm_size);
+
+	if (queue->addr) {
+		if (queue->type == CTRL_QUEUE) {
+			uint32_t head, tail, flags;
+
+			head = READ_ONCE(*queue->hdr.head);
+			tail = READ_ONCE(*queue->hdr.tail);
+			flags = READ_ONCE(*queue->hdr.flags);
+
+			if (head != tail)
+				pr_warn("queue(type:%d head:%u tail:%u flags:%x) is not empty\n",
+					queue->type, head, tail, flags);
+		}
+
+		munmap(queue->addr, queue->shm_size);
+	}
+	if (queue->name) {
+		shm_unlink(queue->name);
+		free(queue->name);
+	}
+	free(queue->bitmap);
+	free(queue);
+}
+
+int queue_unregister(int sockfd, uint64_t id)
+{
+	struct queue_cmd_ipc cmd;
+	char data[8] = {0};
+	int ret;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.cmd = htobe16((uint16_t)QUEUE_CMD_UNREGISTER);
+	cmd.unreg_id = htobe64((uint64_t)id);
+
+	ret = write(sockfd, &cmd, sizeof(cmd));
+	if (ret < 0) {
+		pr_error("Failed to write data to socket: %d\n", errno);
+		return ret;
+	}
+	pr_debug("write data %d bytes to server\n", ret);
+
+	ret = read(sockfd, data, sizeof(data));
+	if (ret < 0) {
+		pr_error("Failed to read data from socket: %d\n", errno);
+		return ret;
+	}
+	pr_debug("read data %d bytes from server\n", ret);
+
+	if (ret != sizeof(uint64_t)) {
+		pr_warn("invalid return value size %d\n", ret);
+		for (int i = 1; i <= ret; i++) {
+			if (i % 32 == 0)
+				printf("\n");
+			printf("%02d ", ((unsigned char *)data)[i - 1]);
+		}
+		printf("\n");
+	}
+
+	swap_be64_to_cpu((unsigned char *)data);
+	int64_t retval = *((int64_t *)data);
+	if (retval < 0) {
+		pr_error("Invalid retval %"PRIx64"\n", retval);
+		return -ERANGE;
+	}
+
+	return 0;
 }
 
 int queue_register(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], uint64_t *id)

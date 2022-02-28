@@ -191,6 +191,8 @@ static inline void print_done_item(struct done_item *item)
 
 int queue_create(enum queue_type type, unsigned int nmemb_order, struct queue_info **queue);
 int queue_register(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], uint64_t *id);
+int queue_unregister(int sockfd, uint64_t id);
+void queue_destroy(struct queue_info *queue);
 
 int connect_to_daemon(const char *fsname);
 int disconnect_to_daemon(int sockfd);
