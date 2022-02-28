@@ -539,7 +539,7 @@ func mount(opt *proto.MountOptions) (fsConn *fuse.Conn, super *cfs.Super, err er
 		fuse.MaxReadahead(MaxReadAhead),
 		fuse.AsyncRead(),
 		fuse.AutoInvalData(opt.AutoInvalData),
-		fuse.FSName("chubaofs-" + opt.Volname),
+		fuse.FSName(fmt.Sprintf("chubaofs-%s-%d", opt.Volname, os.Getpid())),
 		fuse.Subtype("chubaofs"),
 		fuse.LocalVolume(),
 		fuse.VolumeName("chubaofs-" + opt.Volname)}
