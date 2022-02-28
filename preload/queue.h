@@ -204,6 +204,7 @@ void queue_put_items(struct queue_info *queue_array[QUEUE_TYPE_NR], struct ctrl_
 int queue_poll_item(struct queue_info *ctrl_queue, struct done_item *item);
 void queue_mark_item_ready(struct ctrl_item *item);
 void *queue_item(struct queue_info *queue, uint32_t idx);
+int queue_wakeup(int64_t cid, const char *fsname);
 
 int connect_to_daemon(const char *fsname);
 int disconnect_to_daemon(int sockfd);

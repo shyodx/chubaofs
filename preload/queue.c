@@ -31,6 +31,7 @@
 #include <sys/mman.h>
 
 #include "common.h"
+#include "client.h"
 #include "queue.h"
 #include "apis.h"
 #include "log.h"
@@ -56,6 +57,7 @@ typedef uint64_t __be64;
 #define QUEUE_CMD_REGISTER_NEW		1
 #define QUEUE_CMD_REGISTER_CLONE	2
 #define QUEUE_CMD_UNREGISTER		3
+#define QUEUE_CMD_WAKEUP		4
 
 struct queue_info_ipc {
 	__be16 type;
@@ -83,6 +85,11 @@ struct queue_cmd_ipc {
 		/* for unregister */
 		struct {
 			__be64 unreg_id;	// which client to unregister
+		} __attribute__((packed));
+
+		/* for wakeup */
+		struct {
+			__be64 wakeup_id;	// which client to wakeup
 		} __attribute__((packed));
 	};
 	char data[0];	// save all types of queue_info_ipc for register cmds
@@ -686,6 +693,50 @@ void queue_put_items(struct queue_info *queue_array[QUEUE_TYPE_NR], struct ctrl_
 	put_item(queue_array[CTRL_QUEUE]);
 }
 
+int queue_wakeup(int64_t cid, const char *fsname)
+{
+	struct queue_cmd_ipc cmd;
+	char data[8] = {0};
+	int sockfd;
+	int ret;
+
+	sockfd = connect_to_daemon(fsname);
+	if (sockfd < 0)
+		return sockfd;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.cmd = htobe16((uint16_t)QUEUE_CMD_WAKEUP);
+	cmd.wakeup_id = htobe64((uint64_t)cid);
+
+	ret = orig_apis.write(sockfd, &cmd, sizeof(cmd));
+	if (ret < 0) {
+		pr_error("Failed to write data to socket: %d\n", errno);
+		goto out;
+	}
+	pr_debug("write data %d bytes to server\n", ret);
+
+	ret = orig_apis.read(sockfd, data, sizeof(data));
+	if (ret < 0) {
+		pr_error("Failed to read data from socket: %d\n", errno);
+		goto out;
+	}
+	pr_debug("read data %d bytes from server\n", ret);
+
+	if (ret != sizeof(uint64_t))
+		pr_warn("invalid return value size %d\n", ret);
+
+	swap_be64_to_cpu((unsigned char *)data);
+	int64_t retval = *((int64_t *)data);
+	if (retval < 0) {
+		pr_error("Invalid retval %"PRIx64"\n", retval);
+		goto out;
+	}
+
+out:
+	disconnect_to_daemon(sockfd);
+	return ret;
+}
+
 int queue_poll_item(struct queue_info *queue, struct done_item *item)
 {
 	int ret = 0;
@@ -697,6 +748,14 @@ int queue_poll_item(struct queue_info *queue, struct done_item *item)
 		if (done_state == DONE_STATE_READY) {
 			print_done_item(item);
 			return item->retval;
+		}
+
+		/* check if daemon fall asleep */
+		uint32_t flags = READ_ONCE(*queue->hdr.flags);
+		if (flags & QUEUE_SUSPEND) {
+			ret = queue_wakeup(queue->mnt->cid, MNT_FSNAME(queue->mnt));
+			if (ret < 0)
+				break;
 		}
 
 		sched_yield();
