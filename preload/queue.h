@@ -188,4 +188,11 @@ static inline void print_done_item(struct done_item *item)
 		"retval(%"PRId64"), state(%"PRIu32")\n", item->req_id,
 		item->opcode, item->retval, item->state);
 }
+
+int queue_create(enum queue_type type, unsigned int nmemb_order, struct queue_info **queue);
+int queue_register(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], uint64_t *id);
+
+int connect_to_daemon(const char *fsname);
+int disconnect_to_daemon(int sockfd);
+
 #endif

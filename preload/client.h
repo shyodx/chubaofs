@@ -71,6 +71,7 @@ struct client_info {
 };
 
 struct client_info *alloc_client(const char *fstype, pid_t pid);
+int register_client(struct client_info *ci);
 int append_mountpoint(struct client_info *ci, const char *mnt_fsname, const char *mnt_dir);
 
 #endif

@@ -122,6 +122,12 @@ static __init void init(void)
 		free(open_fd);
 	}
 
+	ret = register_client(ci);
+	if (ret < 0) {
+		pr_error("Failed to register client: %s\n", strerror(ret));
+		goto cleanup_fd_map_out;
+	}
+
 	gci = ci;
 
 	return;

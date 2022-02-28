@@ -16,6 +16,7 @@
 #define _CFS_PRELOAD_LIB_LOG_H
 
 #include <stdio.h>
+#include <inttypes.h>
 
 #define pr_error(fmt, ...) do {								\
 	fprintf(stderr, "[ERROR][%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__);	\

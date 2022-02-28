@@ -127,3 +127,65 @@ free_out:
 	free(ci);
 	return NULL;
 }
+
+int register_client(struct client_info *ci)
+{
+	struct mountpoint *mnt;
+	int sockfd;
+	int err;
+
+	pr_debug("==> start register client\n");
+
+	pthread_rwlock_wrlock(&ci->rwlock);
+	if (ci->flags != CI_FLAG_NEW && (ci->flags & CI_FLAG_CLONE) == 0) {
+		pthread_rwlock_unlock(&ci->rwlock);
+		pr_error("Invalid client flags %x\n", ci->flags);
+		return -EINVAL;
+	}
+
+	list_for_each_entry(mnt, &ci->mountpoint_list, mountpoint_link) {
+		for (int type = CTRL_QUEUE; type < QUEUE_TYPE_NR; type++) {
+			err = queue_create(type, CTRL_QUEUE_MEMBERS_ORDER, &mnt->queue_array[type]);
+			if (err < 0) {
+				break;
+			}
+		}
+
+		sockfd = connect_to_daemon(MNT_FSNAME(mnt));
+		if (sockfd < 0) {
+			err = sockfd;
+			break;
+		}
+
+		if (ci->flags == CI_FLAG_NEW) {
+			pr_debug("Register new client\n");
+			err = queue_register(sockfd, mnt->queue_array, (uint64_t *)&ci->appid);
+		}
+		if (err < 0) {
+			disconnect_to_daemon(sockfd);
+			break;
+		}
+
+		/* FIXME: saving cid in mnt is ugly, but how can we do connect_to_daemon()
+		 * to wakeup daemon in queue_poll_item?
+		 */
+		mnt->cid = ci->appid;
+		for (int type = CTRL_QUEUE; type < QUEUE_TYPE_NR; type++)
+			mnt->queue_array[type]->mnt = mnt;
+
+		disconnect_to_daemon(sockfd);
+	}
+	pthread_rwlock_unlock(&ci->rwlock);
+
+	if (err < 0) {
+		pr_error("Failed to register client: %d\n", err);
+		return err;
+	}
+
+	//pthread_rwlock_wrlock(&client_list_lock);
+	//list_add_tail(&ci->client_link, &client_list);
+	//pthread_rwlock_unlock(&client_list_lock);
+
+	pr_debug("Register client %"PRId64"\n", ci->appid);
+	return 0;
+}
