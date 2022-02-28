@@ -81,6 +81,33 @@ static struct fd_map_set *do_append_fd_map_set(struct client_info *ci, int start
 	return fds;
 }
 
+struct fd_map_set *clone_fd_map_set(struct fd_map_set *old)
+{
+	struct fd_map_set *new;
+
+	pr_debug("start clone fd_map_set\n");
+	new = malloc(sizeof(struct fd_map_set));
+	if (new == NULL) {
+		pr_error("alloc fd_map_set fail: %d\n", errno);
+		return NULL;
+	}
+
+	INIT_LIST_HEAD(&new->fds_link);
+	new->start_fd = old->start_fd;
+	new->free_nr = old->free_nr;
+
+	for (int i = 0; i < FD_PER_SET; i++) {
+		new->fd_maps[i].real_fd = old->fd_maps[i].real_fd;
+		new->fd_maps[i].offset = old->fd_maps[i].offset;
+		// FIXME: cid needs to be updated to the latest task id
+		new->fd_maps[i].cid = old->fd_maps[i].cid;
+		for (int type = CTRL_QUEUE; type < QUEUE_TYPE_NR; type++)
+			new->fd_maps[i].queue_array[type] = NULL;
+	}
+
+	return new;
+}
+
 int append_fd_map_set(struct client_info *ci)
 {
 	struct fd_map_set *fds;

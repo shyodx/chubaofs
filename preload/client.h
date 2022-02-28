@@ -71,6 +71,7 @@ struct client_info {
 };
 
 struct client_info *alloc_client(const char *fstype, pid_t pid);
+struct client_info *clone_client(struct client_info *ci);
 void destroy_client(struct client_info *ci);
 void destroy_all_clients(void);
 int register_client(struct client_info *ci);

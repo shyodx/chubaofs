@@ -46,6 +46,7 @@ struct open_fd {
 #define IS_CFS_FD(map) ((map)->cid >= 0)
 
 int append_fd_map_set(struct client_info *ci);
+struct fd_map_set *clone_fd_map_set(struct fd_map_set *old);
 int map_fd(struct client_info *ci, struct queue_info *queue_array[QUEUE_TYPE_NR], int real_fd, int expected_fd, int64_t cid);
 int unmap_fd(struct client_info *ci, int fd, struct fd_map *map);
 int query_fd(struct client_info *ci, int fd, struct fd_map *map);

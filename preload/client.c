@@ -17,7 +17,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdatomic.h>
+#include <unistd.h>
 #include <errno.h>
+
+#include <sys/types.h>
 
 #include "client.h"
 #include "fd_map.h"
@@ -95,6 +98,55 @@ int append_mountpoint(struct client_info *ci, const char *mnt_fsname, const char
 	return 0;
 }
 
+struct mountpoint *clone_mountpoint(struct mountpoint *old)
+{
+	struct mountpoint *new;
+	struct fsname_dir *fsname_dir;
+	size_t len;
+
+	len = strlen(MNT_DIR(old)) + 1 + strlen(MNT_FSNAME(old)) + 1;
+	pr_debug("start clone mountpoint(%s %s) size %zu\n", MNT_FSNAME(old), MNT_DIR(old), sizeof(struct mountpoint) + len);
+	new = malloc(sizeof(struct mountpoint) + len);
+	if (new == NULL) {
+		pr_error("alloc mountpoint fail: %d\n", errno);
+		return NULL;
+	}
+
+	fsname_dir = &new->fsname_dir;
+	fsname_dir->offs = (int)strlen(MNT_DIR(old)) + 1;
+	memcpy(MNT_DIR(new), MNT_DIR(old), fsname_dir->offs);
+	memcpy(MNT_FSNAME(new), MNT_FSNAME(old), (int)len - fsname_dir->offs);
+	INIT_LIST_HEAD(&new->mountpoint_link);
+
+	// FIXME: cid needs to be updated for the latest task id
+	new->cid = -1;
+	// FIXME: how to clone refcnt?
+	new->config.master_addr = strdup(old->config.master_addr);
+	new->config.volname = strdup(old->config.volname);
+	new->config.log_dir = strdup(old->config.log_dir);
+	new->config.log_level = strdup(old->config.log_level);
+	new->config.follower_read = strdup(old->config.follower_read);
+	if (!new->config.master_addr || !new->config.volname ||
+	    !new->config.log_dir || !new->config.log_level ||
+	    !new->config.follower_read) {
+		free(new->config.master_addr);
+		free(new->config.volname);
+		free(new->config.log_dir);
+		free(new->config.log_level);
+		free(new->config.follower_read);
+		free(new);
+		return NULL;
+	}
+
+	for (int type = CTRL_QUEUE; type < QUEUE_TYPE_NR; type++)
+		new->queue_array[type] = NULL;
+
+	pr_debug("Add cfs mountpoint volume '%s' mnt_dir '%s'\n",
+		 new->config.volname, MNT_DIR(new));
+
+	return new;
+}
+
 static void destroy_mountpoints_nolock(struct client_info *ci)
 {
 	struct mountpoint *mnt, *next;
@@ -151,6 +203,76 @@ struct client_info *alloc_client(const char *fstype, pid_t pid)
 
 free_out:
 	free(ci);
+	return NULL;
+}
+
+struct client_info *clone_client(struct client_info *old_ci)
+{
+	struct client_info *new_ci;
+	struct fd_map_set *old_fds, *new_fds;
+	struct mountpoint *old_mnt, *new_mnt;
+	size_t len = strlen(old_ci->fstype) + 1;
+	int err;
+
+	pr_debug("start clone client\n");
+	new_ci = malloc(sizeof(struct client_info) + len);
+	if (new_ci == NULL) {
+		pr_error("alloc client fail: %d\n", errno);
+		return NULL;
+	}
+
+	/* new_ci->appid will be updated during register_client */
+	new_ci->appid = old_ci->appid;
+	new_ci->pid = getpid();
+	new_ci->flags = (old_ci->flags | CI_FLAG_CLONE) & (~CI_FLAG_READY);
+	new_ci->fd_map_set_nr = old_ci->fd_map_set_nr;
+	new_ci->total_free_fd_nr = old_ci->total_free_fd_nr;
+	atomic_init(&new_ci->refcnt, 1);
+	memcpy(new_ci->fstype, old_ci->fstype, len);
+
+	err = pthread_rwlock_init(&new_ci->rwlock, NULL);
+	if (err != 0) {
+		goto free_out;
+	}
+
+	INIT_LIST_HEAD(&new_ci->fd_map_set_list);
+	INIT_LIST_HEAD(&new_ci->mountpoint_list);
+
+	/* clone all fd_map_sets */
+	list_for_each_entry(old_fds, &old_ci->fd_map_set_list, fds_link) {
+		new_fds = clone_fd_map_set(old_fds);
+		if (new_fds == NULL) {
+			pr_error("Failed to alloc new fd_map_set for cloned client\n");
+			err = -ENOMEM;
+			break;
+		}
+
+		list_add_tail(&new_fds->fds_link, &new_ci->fd_map_set_list);
+	}
+	if (err < 0) {
+		/* FIXME: need cleanup */
+		goto free_out;
+	}
+
+	/* clone all mountpoints */
+	list_for_each_entry(old_mnt, &old_ci->mountpoint_list, mountpoint_link) {
+		new_mnt = clone_mountpoint(old_mnt);
+		if (new_mnt == NULL) {
+			pr_error("Failed to alloc new mountpoint for cloned client\n");
+			err = -ENOMEM;
+			break;
+		}
+		list_add_tail(&new_mnt->mountpoint_link, &new_ci->mountpoint_list);
+	}
+	if (err < 0) {
+		/* FIXME: need cleanup */
+		goto free_out;
+	}
+
+	return new_ci;
+
+free_out:
+	free(new_ci);
 	return NULL;
 }
 
@@ -306,6 +428,10 @@ int register_client(struct client_info *ci)
 		if (ci->flags == CI_FLAG_NEW) {
 			pr_debug("Register new client\n");
 			err = queue_register(sockfd, mnt->queue_array, (uint64_t *)&ci->appid);
+		} else if (ci->flags & CI_FLAG_CLONE) {
+			pr_debug("Register clone client %"PRId64"\n", ci->appid);
+			assert(ci->appid != 0);
+			err = queue_register_clone(sockfd, mnt->queue_array, (uint64_t *)&ci->appid);
 		}
 		if (err < 0) {
 			disconnect_to_daemon(sockfd);

@@ -54,6 +54,7 @@ typedef uint32_t __be32;
 typedef uint64_t __be64;
 
 #define QUEUE_CMD_REGISTER_NEW		1
+#define QUEUE_CMD_REGISTER_CLONE	2
 #define QUEUE_CMD_UNREGISTER		3
 
 struct queue_info_ipc {
@@ -72,6 +73,11 @@ struct queue_cmd_ipc {
 		/* for register new */
 		struct {
 			__be64 rsvd3;
+		} __attribute__((packed));
+
+		/* for register clone */
+		struct {
+			__be64 app_id;		// which client that the new client will attach to
 		} __attribute__((packed));
 
 		/* for unregister */
@@ -342,6 +348,91 @@ int queue_register(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], ui
 
 	cmd = (struct queue_cmd_ipc *)out_data;
 	cmd->cmd = htobe16((uint16_t)QUEUE_CMD_REGISTER_NEW);
+	offs = offsetof(struct queue_cmd_ipc, data);
+	for (int type = 0; type < QUEUE_TYPE_NR; type++) {
+		qdata = (struct queue_info_ipc *)(out_data + offs);
+		queue = queue_array[type];
+		namelen = strlen(queue->name);
+
+		qdata->type = htobe16((uint16_t)queue->type);
+		qdata->namelen = htobe16((uint16_t)namelen);
+		qdata->size = htobe16(queue->size);
+		qdata->members = htobe32(queue->members);
+		strncpy(qdata->name, queue->name, namelen);
+
+		pr_debug("queue(type:%d namelen:%zu size:%d members:%u name:%s) size %zu at offs %zu\n",
+			 queue->type, namelen, queue->size, queue->members,
+			 queue->name, sizeof(struct queue_info_ipc) + namelen, offs);
+
+		offs += sizeof(struct queue_info_ipc) + namelen;
+		assert(offs <= size);
+	}
+
+	ret = orig_apis.write(sockfd, out_data, size);
+	if (ret < 0) {
+		pr_error("Failed to write data to socket: %d\n", errno);
+		free(out_data);
+		return ret;
+	}
+	pr_debug("write data %d bytes to server\n", ret);
+
+	assert(size > sizeof(uint64_t));
+	ret = orig_apis.read(sockfd, out_data, size);
+	if (ret < 0) {
+		pr_error("Failed to read data from socket: %d\n", errno);
+		free(out_data);
+		return ret;
+	}
+	pr_debug("read data %d bytes from server\n", ret);
+
+	if (ret != sizeof(uint64_t)) {
+		pr_warn("invalid return value size %d\n", ret);
+		for (int i = 1; i <= ret; i++) {
+			if (i % 32 == 0)
+				printf("\n");
+			printf("%02d ", ((unsigned char *)out_data)[i - 1]);
+		}
+		printf("\n");
+	}
+
+	swap_be64_to_cpu((unsigned char *)out_data);
+	*id = *((uint64_t *)out_data);
+	free(out_data);
+	if (*id == ULLONG_MAX) {
+		pr_error("Invalid appid %"PRIx64"\n", *id);
+		return -ERANGE;
+	}
+
+	pr_debug("get appid %"PRIu64"\n", *id);
+	return 0;
+}
+
+int queue_register_clone(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], uint64_t *id)
+{
+	struct queue_cmd_ipc *cmd;
+	struct queue_info_ipc *qdata;
+	struct queue_info *queue;
+	size_t namelen;
+	void *out_data;
+	size_t size, offs;
+	int ret;
+
+	if (queue_array == NULL || id == NULL)
+		return -EINVAL;
+
+	size = sizeof(struct queue_cmd_ipc);
+	size += sizeof(struct queue_info_ipc) * QUEUE_TYPE_NR;
+        for (int type = 0; type < QUEUE_TYPE_NR; type++)
+                size += strlen(queue_array[type]->name);
+
+        out_data = malloc(size);
+        if (out_data == NULL)
+                return -ENOMEM;
+	memset(out_data, 0, size);
+
+	cmd = (struct queue_cmd_ipc *)out_data;
+	cmd->cmd = htobe16((uint16_t)QUEUE_CMD_REGISTER_CLONE);
+	cmd->app_id = htobe64(*id);
 	offs = offsetof(struct queue_cmd_ipc, data);
 	for (int type = 0; type < QUEUE_TYPE_NR; type++) {
 		qdata = (struct queue_info_ipc *)(out_data + offs);

@@ -196,6 +196,7 @@ static inline void print_done_item(struct done_item *item)
 
 int queue_create(enum queue_type type, unsigned int nmemb_order, struct queue_info **queue);
 int queue_register(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], uint64_t *id);
+int queue_register_clone(int sockfd, struct queue_info *queue_array[QUEUE_TYPE_NR], uint64_t *id);
 int queue_unregister(int sockfd, uint64_t id);
 void queue_destroy(struct queue_info *queue);
 int queue_get_items(struct queue_info *queue_array[QUEUE_TYPE_NR], struct queue_item_params *params);
