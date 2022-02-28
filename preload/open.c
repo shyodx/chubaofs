@@ -451,5 +451,5 @@ int shm_unlink(const char *name)
 	/* FIXME: need check name */
 	snprintf(buf, NAME_MAX, "/dev/shm/%s", name);
 	pr_debug("unlink shm file %s\n", buf);
-	return unlink(buf);
+	return orig_apis.unlink(buf);
 }
