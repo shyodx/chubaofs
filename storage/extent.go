@@ -283,7 +283,7 @@ func (e *Extent) Read(data []byte, offset, size int64, isRepairRead bool) (crc u
 	if isRepairRead {
 		if size == util.RepairReadBlockSize {
 			// readahead more data to be repaired
-			unix.Fadvise(int(e.file.Fd()), offset + size,
+			unix.Fadvise(int(e.file.Fd()), offset+size,
 				util.RepairReadBlockSize, unix.FADV_WILLNEED)
 		}
 	} else {

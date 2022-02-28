@@ -23,12 +23,12 @@ import (
 const (
 	MetricPartitionIOName      = "dataPartitionIO"
 	MetricPartitionIOBytesName = "dataPartitionIOBytes"
-	RoutinesName = "routines"
+	RoutinesName               = "routines"
 )
 
 type DataNodeMetrics struct {
 	MetricIOBytes *exporter.Counter
-	Routines *exporter.GaugeVec
+	Routines      *exporter.GaugeVec
 }
 
 func (d *DataNode) registerMetrics() {

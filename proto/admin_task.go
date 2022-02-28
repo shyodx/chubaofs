@@ -115,7 +115,7 @@ func (t *AdminTask) IsHeartbeatTask() bool {
 
 // NewAdminTask returns a new adminTask.
 func NewAdminTask(opCode uint8, opAddr string, request interface{}) (t *AdminTask) {
-	packet := Packet{Opcode:opCode}
+	packet := Packet{Opcode: opCode}
 	t = new(AdminTask)
 	t.OpCode = opCode
 	t.Request = request
