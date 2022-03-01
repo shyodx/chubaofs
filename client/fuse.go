@@ -74,6 +74,7 @@ const (
 	ControlCommandFreeOSMemory = "/debug/freeosmemory"
 	ControlCommandSuspend      = "/suspend"
 	ControlCommandResume       = "/resume"
+	ControlMetaWrapperConfig   = "/mwconf"
 	Role                       = "Client"
 
 	DefaultIP            = "127.0.0.1"
@@ -520,6 +521,7 @@ func mount(opt *proto.MountOptions) (fsConn *fuse.Conn, super *cfs.Super, err er
 	http.HandleFunc(log.GetLogPath, log.GetLog)
 	http.HandleFunc(ControlCommandSuspend, super.SetSuspend)
 	http.HandleFunc(ControlCommandResume, super.SetResume)
+	http.HandleFunc(ControlMetaWrapperConfig, super.MetaWrapperConfig)
 
 	statusCh := make(chan error)
 	go waitListenAndServe(statusCh, ":"+opt.Profport, nil)

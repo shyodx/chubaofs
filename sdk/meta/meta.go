@@ -16,8 +16,6 @@ package meta
 
 import (
 	"fmt"
-	"net/http"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -154,44 +152,6 @@ type Ticket struct {
 	Ticket     string `json:"ticket"`
 }
 
-func (mw *MetaWrapper) MetaWrapperConfig(w http.ResponseWriter, r *http.Request) {
-	var sendRetryInterval = atomic.LoadInt64(&mw.userConfig.sendRetryIntervalMilliseconds)
-	var sendRetryTimeout = atomic.LoadInt64(&mw.userConfig.sendRetryTimeoutSeconds)
-
-	if err := r.ParseForm(); err != nil {
-		w.Write([]byte(err.Error()))
-		return
-	}
-
-	if str := r.FormValue("sendRetryIntervalMilliseconds"); str != "" {
-		val, err := strconv.ParseInt(str, 10, 64)
-		if err != nil {
-			w.Write([]byte("Set send retry interval failed\n"))
-		} else {
-			atomic.StoreInt64(&mw.userConfig.sendRetryIntervalMilliseconds, val*int64(time.Millisecond))
-			w.Write([]byte(fmt.Sprintf("Set retry interval to %v millisecond successfully\n", val)))
-			sendRetryInterval = val * int64(time.Millisecond)
-		}
-	}
-
-	if str := r.FormValue("sendRetryTimeoutSeconds"); str != "" {
-		val, err := strconv.ParseInt(str, 10, 64)
-		if err != nil {
-			w.Write([]byte("Set send retry timeout failed\n"))
-		} else if val*int64(time.Second) < sendRetryInterval {
-			w.Write([]byte(fmt.Sprintf("Set send retry timeout failed: less than interval %v milliseconds\n",
-				sendRetryInterval)))
-		} else {
-			atomic.StoreInt64(&mw.userConfig.sendRetryTimeoutSeconds, val*int64(time.Second))
-			w.Write([]byte(fmt.Sprintf("Set retry timeout to %v second successfully\n", val)))
-			sendRetryTimeout = val * int64(time.Second)
-		}
-	}
-
-	w.Write([]byte(fmt.Sprintf("Set retry config successfully: interval %s timeout %s\n",
-		time.Duration(sendRetryInterval), time.Duration(sendRetryTimeout))))
-}
-
 func NewMetaWrapper(config *MetaConfig) (*MetaWrapper, error) {
 	var err error
 	mw := new(MetaWrapper)
@@ -254,8 +214,6 @@ func NewMetaWrapper(config *MetaConfig) (*MetaWrapper, error) {
 		return nil, err
 	}
 
-	http.HandleFunc("/mwconf", mw.MetaWrapperConfig)
-
 	go mw.refresh()
 	return mw, nil
 }
@@ -306,6 +264,31 @@ func (mw *MetaWrapper) LocalIP() string {
 
 func (mw *MetaWrapper) exporterKey(act string) string {
 	return fmt.Sprintf("%s_sdk_meta_%s", mw.cluster, act)
+}
+
+func (mw *MetaWrapper) ConfigOf(key string) (interface{}, error) {
+	switch key {
+	case "retryInterval":
+		return atomic.LoadInt64(&mw.userConfig.sendRetryIntervalMilliseconds), nil
+	case "retryTimeout":
+		return atomic.LoadInt64(&mw.userConfig.sendRetryTimeoutSeconds), nil
+	default:
+		return nil, errors.NewErrorf("Unknown key[%v]", key)
+	}
+}
+
+func (mw *MetaWrapper) SetConfig(key string, val interface{}) error {
+	switch key {
+	case "retryInterval":
+		interval := val.(int64)
+		atomic.StoreInt64(&mw.userConfig.sendRetryIntervalMilliseconds, interval)
+	case "retryTimeout":
+		timeout := val.(int64)
+		atomic.StoreInt64(&mw.userConfig.sendRetryTimeoutSeconds, timeout)
+	default:
+		return errors.NewErrorf("Unknown key[%v]", key)
+	}
+	return nil
 }
 
 // Proto ResultCode to status

@@ -338,3 +338,56 @@ func (s *Super) Notify(stat fs.FSStatType, msg interface{}) {
 		s.fslock.Unlock()
 	}
 }
+
+func (s *Super) MetaWrapperConfig(w http.ResponseWriter, r *http.Request) {
+	var (
+		sendRetryInterval int64
+		sendRetryTimeout  int64
+	)
+
+	if val, err := s.mw.ConfigOf("retryInterval"); err != nil {
+		w.Write([]byte(err.Error()))
+		return
+	} else {
+		sendRetryInterval = val.(int64)
+	}
+	if val, err := s.mw.ConfigOf("retryTimeout"); err != nil {
+		w.Write([]byte(err.Error()))
+		return
+	} else {
+		sendRetryTimeout = val.(int64)
+	}
+
+	if err := r.ParseForm(); err != nil {
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	if str := r.FormValue("sendRetryIntervalMilliseconds"); str != "" {
+		val, err := strconv.ParseInt(str, 10, 64)
+		if err != nil {
+			w.Write([]byte("Set send retry interval failed\n"))
+		} else {
+			s.mw.SetConfig("retryInterval", val*int64(time.Millisecond))
+			w.Write([]byte(fmt.Sprintf("Set retry interval to %v millisecond successfully\n", val)))
+			sendRetryInterval = val * int64(time.Millisecond)
+		}
+	}
+
+	if str := r.FormValue("sendRetryTimeoutSeconds"); str != "" {
+		val, err := strconv.ParseInt(str, 10, 64)
+		if err != nil {
+			w.Write([]byte("Set send retry timeout failed\n"))
+		} else if val*int64(time.Second) < sendRetryInterval {
+			w.Write([]byte(fmt.Sprintf("Set send retry timeout failed: less than interval %v milliseconds\n",
+				sendRetryInterval)))
+		} else {
+			s.mw.SetConfig("retryTimeout", val*int64(time.Second))
+			w.Write([]byte(fmt.Sprintf("Set retry timeout to %v second successfully\n", val)))
+			sendRetryTimeout = val * int64(time.Second)
+		}
+	}
+
+	w.Write([]byte(fmt.Sprintf("Set retry config successfully: interval %s timeout %s\n",
+		time.Duration(sendRetryInterval), time.Duration(sendRetryTimeout))))
+}
