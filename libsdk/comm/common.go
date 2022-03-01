@@ -122,6 +122,9 @@ type client struct {
 	followerRead bool
 	logDir       string
 	logLevel     string
+	userID       string
+	accessKey    string
+	secretKey    string
 
 	// runtime context
 	cwd    string // current working directory
@@ -161,6 +164,12 @@ func CFSSetClient(cid int64, key, val string) int {
 		c.logDir = val
 	case "logLevel":
 		c.logLevel = val
+	case "user":
+		c.userID = val
+	case "ak":
+		c.accessKey = val
+	case "sk":
+		c.secretKey = val
 	default:
 		return statusEINVAL
 	}
@@ -659,6 +668,9 @@ func (c *client) start() (err error) {
 		Volume:        c.volName,
 		Masters:       masters,
 		ValidateOwner: false,
+		Owner:         c.userID,
+		AccessKey:     c.accessKey,
+		SecretKey:     c.secretKey,
 	}); err != nil {
 		return
 	}
