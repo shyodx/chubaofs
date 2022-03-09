@@ -207,7 +207,7 @@ func getOpName(op uint32) string {
 	case opSyncUpdateVolUser:
 		return "opSyncUpdateVolUser"
 	default:
-		return fmt.Sprintf("Unknown operation %u", op)
+		return fmt.Sprintf("Unknown operation %v", op)
 	}
 }
 
