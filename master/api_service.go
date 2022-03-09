@@ -1335,7 +1335,6 @@ func (m *Server) deleteMetaNode(w http.ResponseWriter, r *http.Request) {
 	sendOkReply(w, r, newSuccessHTTPReply(id))
 }
 
-
 func (m *Server) getMetaNode(w http.ResponseWriter, r *http.Request) {
 	var (
 		nodeAddr     string
