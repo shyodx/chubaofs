@@ -25,10 +25,11 @@ import (
 	"syscall"
 	"time"
 
+	"os"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/exporter"
 	"github.com/chubaofs/chubaofs/util/log"
-	"os"
 )
 
 var (
@@ -345,15 +346,21 @@ func (d *Disk) RestorePartition(visitor PartitionVisitor) {
 		partitionSize int
 	)
 
-	fileInfoList, err := os.ReadDir(d.Path)
+	fh, err := os.Open(d.Path)
+	if err != nil {
+		log.LogErrorf("action[RestorePartition] failed to open dir(%v) err(%v).", d.Path, err)
+		return
+	}
+	defer fh.Close()
+
+	fileList, err := fh.Readdirnames(0)
 	if err != nil {
 		log.LogErrorf("action[RestorePartition] read dir(%v) err(%v).", d.Path, err)
 		return
 	}
 
 	var wg sync.WaitGroup
-	for _, fileInfo := range fileInfoList {
-		filename := fileInfo.Name()
+	for _, filename := range fileList {
 		if !d.isPartitionDir(filename) {
 			continue
 		}
@@ -364,7 +371,7 @@ func (d *Disk) RestorePartition(visitor PartitionVisitor) {
 			continue
 		}
 		log.LogDebugf("acton[RestorePartition] disk(%v) path(%v) PartitionID(%v) partitionSize(%v).",
-			d.Path, fileInfo.Name(), partitionID, partitionSize)
+			d.Path, filename, partitionID, partitionSize)
 
 		if isExpiredPartition(partitionID, dinfo.PersistenceDataPartitions) {
 			log.LogErrorf("action[RestorePartition]: find expired partition[%s], rename it and you can delete it "+
