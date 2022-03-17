@@ -20,11 +20,12 @@ import (
 	"time"
 
 	"fmt"
+	"net"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
-	"net"
 )
 
 //const
@@ -116,10 +117,16 @@ func (sender *AdminTaskManager) doSendTasks() {
 }
 
 func (sender *AdminTaskManager) getConn() (conn *net.TCPConn, err error) {
-	if useConnPool {
-		return sender.connPool.GetConnect(sender.targetAddr)
-	}
+	return sender.connPool.GetConnect(sender.targetAddr)
+}
+
+func (sender *AdminTaskManager) putConn(conn *net.TCPConn, forceClose bool) {
+	sender.connPool.PutConnect(conn, forceClose)
+}
+
+func (sender *AdminTaskManager) dialConn() (conn *net.TCPConn, err error) {
 	var connect net.Conn
+
 	connect, err = net.Dial("tcp", sender.targetAddr)
 	if err == nil {
 		conn = connect.(*net.TCPConn)
@@ -127,12 +134,6 @@ func (sender *AdminTaskManager) getConn() (conn *net.TCPConn, err error) {
 		conn.SetNoDelay(true)
 	}
 	return
-}
-
-func (sender *AdminTaskManager) putConn(conn *net.TCPConn, forceClose bool) {
-	if useConnPool {
-		sender.connPool.PutConnect(conn, forceClose)
-	}
 }
 
 func (sender *AdminTaskManager) sendTasks(tasks []*proto.AdminTask) {
@@ -200,17 +201,12 @@ func (sender *AdminTaskManager) syncSendAdminTask(task *proto.AdminTask) (packet
 	if err != nil {
 		return nil, errors.Trace(err, "action[syncSendAdminTask build packet failed,task:%v]", task.ID)
 	}
-	conn, err := sender.getConn()
+	conn, err := sender.dialConn()
 	if err != nil {
 		return nil, errors.Trace(err, "action[syncSendAdminTask get conn failed,task:%v]", task.ID)
 	}
-	defer func() {
-		if err == nil {
-			sender.putConn(conn, false)
-		} else {
-			sender.putConn(conn, true)
-		}
-	}()
+	defer conn.Close()
+
 	if err = packet.WriteToConn(conn); err != nil {
 		return nil, errors.Trace(err, "action[syncSendAdminTask],WriteToConn failed,task:%v,reqID[%v]", task.ID, packet.ReqID)
 	}

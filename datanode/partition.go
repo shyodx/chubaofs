@@ -125,7 +125,8 @@ type DataPartition struct {
 	intervalToUpdatePartitionSize int64
 	loadExtentHeaderStatus        int
 	DataPartitionCreateType       int
-	isLoadingDataPartition        bool
+	isLoadingDataPartition        int32
+	persistMetaMutex              sync.RWMutex
 }
 
 func CreateDataPartition(dpCfg *dataPartitionCfg, disk *Disk, request *proto.CreateDataPartitionRequest) (dp *DataPartition, err error) {
@@ -175,11 +176,15 @@ func (dp *DataPartition) IsEquareCreateDataPartitionRequst(request *proto.Create
 }
 
 func (dp *DataPartition) ForceSetDataPartitionToLoadding() {
-	dp.isLoadingDataPartition = true
+	atomic.StoreInt32(&dp.isLoadingDataPartition, 1)
 }
 
 func (dp *DataPartition) ForceSetDataPartitionToFininshLoad() {
-	dp.isLoadingDataPartition = false
+	atomic.StoreInt32(&dp.isLoadingDataPartition, 0)
+}
+
+func (dp *DataPartition) IsDataPartitionLoading() bool {
+	return atomic.LoadInt32(&dp.isLoadingDataPartition) == 1
 }
 
 func (dp *DataPartition) ForceSetRaftRunning() {
@@ -447,6 +452,9 @@ func (dp *DataPartition) ForceLoadHeader() {
 
 // PersistMetadata persists the file metadata on the disk.
 func (dp *DataPartition) PersistMetadata() (err error) {
+	dp.persistMetaMutex.Lock()
+	defer dp.persistMetaMutex.Unlock()
+
 	var (
 		metadataFile *os.File
 		metaData     []byte

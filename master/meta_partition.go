@@ -18,12 +18,13 @@ import (
 	"sync"
 
 	"fmt"
-	"github.com/chubaofs/chubaofs/proto"
-	"github.com/chubaofs/chubaofs/util/errors"
-	"github.com/chubaofs/chubaofs/util/log"
 	"math"
 	"strings"
 	"time"
+
+	"github.com/chubaofs/chubaofs/proto"
+	"github.com/chubaofs/chubaofs/util/errors"
+	"github.com/chubaofs/chubaofs/util/log"
 )
 
 // MetaReplica defines the replica of a meta partition
@@ -640,6 +641,10 @@ func (mr *MetaReplica) updateMetric(mgr *proto.MetaPartitionReport) {
 	mr.InodeCount = mgr.InodeCnt
 	mr.DentryCount = mgr.DentryCnt
 	mr.setLastReportTime()
+
+	if mr.metaNode.RdOnly && mr.Status == proto.ReadWrite {
+		mr.Status = proto.ReadOnly
+	}
 }
 
 func (mp *MetaPartition) afterCreation(nodeAddr string, c *Cluster) (err error) {
@@ -684,6 +689,27 @@ func (mp *MetaPartition) getMinusOfMaxInodeID() (minus float64) {
 		}
 	}
 	return
+}
+
+func (mp *MetaPartition) activeMaxInodeSimilar() bool {
+	mp.RLock()
+	defer mp.RUnlock()
+
+	minus := float64(0)
+	var sentry float64
+	replicas := mp.getLiveReplicas()
+	for index, replica := range replicas {
+		if index == 0 {
+			sentry = float64(replica.MaxInodeID)
+			continue
+		}
+		diff := math.Abs(float64(replica.MaxInodeID) - sentry)
+		if diff > minus {
+			minus = diff
+		}
+	}
+
+	return minus < defaultMinusOfMaxInodeID
 }
 
 func (mp *MetaPartition) setMaxInodeID() {

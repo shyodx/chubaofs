@@ -1658,9 +1658,8 @@ func (v *Volume) recursiveScan(fileInfos []*FSFileInfo, prefixMap PrefixMap, par
 	var err error
 	var nextMarker string
 
-	log.LogDebugf("recursiveScan enter: fileInfos(%v) parentId(%v) prefix(%v) marker(%v) delimiter(%v)", fileInfos, parentId, prefix, marker, delimiter)
-
 	var currentPath = strings.Join(dirs, pathSep) + pathSep
+	log.LogDebugf("recursiveScan enter: fileInfos(%v) parentId(%v) prefix(%v) marker(%v) delimiter(%v) currentPath(%v)", fileInfos, parentId, prefix, marker, delimiter, currentPath)
 
 	if len(dirs) > 0 && prefix != "" && strings.HasSuffix(currentPath, prefix) {
 		// When the current scanning position is not the root directory, a prefix matching
@@ -1748,7 +1747,7 @@ func (v *Volume) recursiveScan(fileInfos []*FSFileInfo, prefixMap PrefixMap, par
 			if !os.FileMode(child.Type).IsDir() && path < marker {
 				continue
 			}
-			if os.FileMode(child.Type).IsDir() && path < marker {
+			if os.FileMode(child.Type).IsDir() && strings.HasPrefix(marker, path) {
 				fileInfos, prefixMap, nextMarker, rc, err = v.recursiveScan(fileInfos, prefixMap, child.Inode, maxKeys, rc, append(dirs, child.Name), prefix, marker, delimiter)
 				if err != nil {
 					return fileInfos, prefixMap, nextMarker, rc, err
@@ -1788,7 +1787,7 @@ func (v *Volume) recursiveScan(fileInfos []*FSFileInfo, prefixMap PrefixMap, par
 		rc++
 
 		if os.FileMode(child.Type).IsDir() {
-			fileInfos, prefixMap, nextMarker, rc, err = v.recursiveScan(fileInfos, prefixMap, child.Inode, maxKeys, rc, append(dirs, child.Name), prefix, marker, delimiter)
+			fileInfos, prefixMap, nextMarker, rc, err = v.recursiveScan(fileInfos, prefixMap, child.Inode, maxKeys, rc, append(dirs, child.Name), prefix, fmt.Sprintf("%v%v%v", currentPath, child.Name, pathSep), delimiter)
 			if err != nil {
 				return fileInfos, prefixMap, nextMarker, rc, err
 			}

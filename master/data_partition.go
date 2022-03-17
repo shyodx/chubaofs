@@ -429,12 +429,6 @@ func (partition *DataPartition) setToNormal() {
 	partition.isRecover = false
 }
 
-func (partition *DataPartition) setStatus(status int8) {
-	partition.Lock()
-	defer partition.Unlock()
-	partition.Status = status
-}
-
 func (partition *DataPartition) hasHost(addr string) (ok bool) {
 	for _, host := range partition.Hosts {
 		if host == addr {
@@ -566,6 +560,10 @@ func (partition *DataPartition) updateMetric(vr *proto.PartitionReport, dataNode
 		}
 	}
 	partition.checkAndRemoveMissReplica(dataNode.Addr)
+
+	if replica.Status == proto.ReadWrite && replica.dataNode.RdOnly {
+		replica.Status = int8(proto.ReadOnly)
+	}
 }
 
 func (partition *DataPartition) setMaxUsed() {
@@ -636,6 +634,22 @@ func (partition *DataPartition) getMinus() (minus float64) {
 		}
 	}
 	return minus
+}
+
+func (partition *DataPartition) activeUsedSimilar() bool {
+	partition.RLock()
+	defer partition.RUnlock()
+	liveReplicas := partition.liveReplicas(defaultDataPartitionTimeOutSec)
+	used := liveReplicas[0].Used
+	minus := float64(0)
+
+	for _, replica := range liveReplicas {
+		if math.Abs(float64(replica.Used)-float64(used)) > minus {
+			minus = math.Abs(float64(replica.Used) - float64(used))
+		}
+	}
+
+	return minus < util.GB
 }
 
 func (partition *DataPartition) getToBeDecommissionHost(replicaNum int) (host string) {

@@ -17,7 +17,6 @@ package meta
 import (
 	"fmt"
 	"net"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,6 +24,11 @@ import (
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/log"
+)
+
+const (
+	SendRetryInterval = 100 * time.Millisecond
+	SendTimeLimit     = 60 * time.Second
 )
 
 type MetaConn struct {
@@ -55,13 +59,11 @@ func (mw *MetaWrapper) putConn(mc *MetaConn, err error) {
 
 func (mw *MetaWrapper) sendToMetaPartition(mp *MetaPartition, req *proto.Packet) (*proto.Packet, error) {
 	var (
-		resp     *proto.Packet
-		err      error
-		addr     string
-		mc       *MetaConn
-		start    time.Time
-		timeout  time.Duration
-		interval time.Duration
+		resp  *proto.Packet
+		err   error
+		addr  string
+		mc    *MetaConn
+		start time.Time
 	)
 	errs := make(map[int]error, len(mp.Members))
 	var j int
@@ -85,8 +87,6 @@ func (mw *MetaWrapper) sendToMetaPartition(mp *MetaPartition, req *proto.Packet)
 
 retry:
 	start = time.Now()
-	timeout = time.Duration(atomic.LoadInt64(&mw.userConfig.sendRetryTimeoutSeconds))
-	interval = time.Duration(atomic.LoadInt64(&mw.userConfig.sendRetryIntervalMilliseconds))
 	for i := 1; ; i++ {
 		for j, addr = range mp.Members {
 			mc, err = mw.getConn(mp.PartitionID, addr)
@@ -107,12 +107,12 @@ retry:
 			}
 			log.LogWarnf("sendToMetaPartition: retry failed req(%v) mp(%v) mc(%v) errs(%v) resp(%v)", req, mp, mc, errs, resp)
 		}
-		if time.Since(start) > timeout {
+		if time.Since(start) > SendTimeLimit {
 			log.LogWarnf("sendToMetaPartition: retry timeout req(%v) mp(%v) time(%v)", req, mp, time.Since(start))
 			break
 		}
-		log.LogWarnf("sendToMetaPartition: req(%v) mp(%v) retry in (%v) count(%v)", req, mp, interval, i)
-		time.Sleep(interval)
+		log.LogWarnf("sendToMetaPartition: req(%v) mp(%v) retry in (%v) count(%v)", req, mp, SendRetryInterval, i)
+		time.Sleep(SendRetryInterval)
 	}
 
 out:

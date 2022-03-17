@@ -39,6 +39,7 @@ const (
 	AdminListVols                  = "/vol/list"
 	AdminSetNodeInfo               = "/admin/setNodeInfo"
 	AdminGetNodeInfo               = "/admin/getNodeInfo"
+	AdminSetNodeRdOnly             = "/admin/setNodeRdOnly"
 
 	//graphql master api
 	AdminClusterAPI = "/api/cluster"
@@ -67,13 +68,17 @@ const (
 	// Node APIs
 	AddDataNode                    = "/dataNode/add"
 	DecommissionDataNode           = "/dataNode/decommission"
+	MigrateDataNode                = "/dataNode/migrate"
 	DecommissionDisk               = "/disk/decommission"
 	GetDataNode                    = "/dataNode/get"
 	AddMetaNode                    = "/metaNode/add"
 	DecommissionMetaNode           = "/metaNode/decommission"
+	MigrateMetaNode                = "/metaNode/migrate"
 	GetMetaNode                    = "/metaNode/get"
 	AdminUpdateMetaNode            = "/metaNode/update"
 	AdminUpdateDataNode            = "/dataNode/update"
+	AdminDeleteMetaNode            = "/metaNode/delete"
+	AdminDeleteDataNode            = "/dataNode/delete"
 	AdminGetInvalidNodes           = "/invalid/nodes"
 	AdminLoadMetaPartition         = "/metaPartition/load"
 	AdminDiagnoseMetaPartition     = "/metaPartition/diagnose"

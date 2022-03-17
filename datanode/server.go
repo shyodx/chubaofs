@@ -60,6 +60,7 @@ const (
 	DefaultDiskMaxErr       = 1
 	DefaultDiskRetainMin    = 5 * util.GB  // GB
 	DefaultDiskRetainMax    = 30 * util.GB // GB
+	DefaultSnapConcurrency  = 1000         // Snapshot send concurrency limit
 )
 
 const (
@@ -76,6 +77,7 @@ const (
 	ConfigKeyRaftHeartbeat = "raftHeartbeat" // string
 	ConfigKeyRaftReplica   = "raftReplica"   // string
 	CfgTickInterval        = "tickInterval"  // int
+	ConfigKeyRaftMaxSnap   = "raftMaxSnap"   // int
 	// smux Config
 	ConfigKeyEnableSmuxClient  = "enableSmuxConnPool" //bool
 	ConfigKeySmuxPortShift     = "smuxPortShift"      //int
@@ -98,6 +100,7 @@ type DataNode struct {
 	raftReplica     string
 	raftStore       raftstore.RaftStore
 	tickInterval    int
+	raftMaxSnap     int
 
 	tcpListener net.Listener
 	stopC       chan bool
@@ -162,7 +165,7 @@ func doStart(server common.Server, cfg *config.Config) (err error) {
 	s.initConnPool()
 
 	// init limit
-	initRepairLimit()
+	initRepairLimit(s, cfg)
 
 	// start the raft server
 	if err = s.startRaftServer(cfg); err != nil {
@@ -390,6 +393,7 @@ func (s *DataNode) registerHandler() {
 	http.HandleFunc("/disks", s.getDiskAPI)
 	http.HandleFunc("/partitions", s.getPartitionsAPI)
 	http.HandleFunc("/partition", s.getPartitionAPI)
+	http.HandleFunc("/deletePartition", s.deletePartition)
 	http.HandleFunc("/extent", s.getExtentAPI)
 	http.HandleFunc("/block", s.getBlockCrcAPI)
 	http.HandleFunc("/stats", s.getStatAPI)

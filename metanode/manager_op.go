@@ -253,7 +253,7 @@ func (m *metadataManager) opDeleteDentry(conn net.Conn, p *Packet,
 	}
 	err = mp.DeleteDentry(req, p)
 	m.respondToClient(conn, p)
-	log.LogDebugf("%s [opDeleteDentry] req: %d - %v, resp: %v, body: %s",
+	log.LogWritef("[opDeleteDentry] ip: %s, req: %d - %+v, resp: %v, body: %s",
 		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data)
 	return
 }
@@ -1291,24 +1291,23 @@ func (m *metadataManager) opGetMultipart(conn net.Conn, p *Packet, remote string
 }
 
 func (m *metadataManager) opAppendMultipart(conn net.Conn, p *Packet, remote string) (err error) {
-	defer func() {
-		if err != nil {
-			p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
-		}
-		_ = m.respondToClient(conn, p)
-	}()
 	req := &proto.AddMultipartPartRequest{}
 	if err = json.Unmarshal(p.Data, req); err != nil {
+		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
+		m.respondToClient(conn, p)
 		return
 	}
 	mp, err := m.getPartition(req.PartitionId)
 	if err != nil {
+		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
+		m.respondToClient(conn, p)
 		return
 	}
 	if !m.serveProxy(conn, mp, p) {
 		return
 	}
 	err = mp.AppendMultipart(req, p)
+	_ = m.respondToClient(conn, p)
 	return
 }
 

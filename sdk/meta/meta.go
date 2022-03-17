@@ -16,10 +16,7 @@ package meta
 
 import (
 	"fmt"
-	"net/http"
-	"strconv"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -63,11 +60,6 @@ const (
 	MinForceUpdateMetaPartitionsInterval = 5
 )
 
-const (
-	SendRetryIntervalMilliseconds int64 = 100
-	SendRetryTimeoutSeconds       int64 = 60
-)
-
 type AsyncTaskErrorFunc func(err error)
 
 func (f AsyncTaskErrorFunc) OnError(err error) {
@@ -86,11 +78,6 @@ type MetaConfig struct {
 	TicketMess       auth.TicketMess
 	ValidateOwner    bool
 	OnAsyncTaskError AsyncTaskErrorFunc
-}
-
-type userConfig struct {
-	sendRetryIntervalMilliseconds int64
-	sendRetryTimeoutSeconds       int64
 }
 
 type MetaWrapper struct {
@@ -142,8 +129,6 @@ type MetaWrapper struct {
 	// Used to trigger and throttle instant partition updates
 	forceUpdate      chan struct{}
 	forceUpdateLimit *rate.Limiter
-
-	userConfig userConfig
 }
 
 //the ticket from authnode
@@ -152,44 +137,6 @@ type Ticket struct {
 	SessionKey string `json:"session_key"`
 	ServiceID  string `json:"service_id"`
 	Ticket     string `json:"ticket"`
-}
-
-func (mw *MetaWrapper) MetaWrapperConfig(w http.ResponseWriter, r *http.Request) {
-	var sendRetryInterval = atomic.LoadInt64(&mw.userConfig.sendRetryIntervalMilliseconds)
-	var sendRetryTimeout = atomic.LoadInt64(&mw.userConfig.sendRetryTimeoutSeconds)
-
-	if err := r.ParseForm(); err != nil {
-		w.Write([]byte(err.Error()))
-		return
-	}
-
-	if str := r.FormValue("sendRetryIntervalMilliseconds"); str != "" {
-		val, err := strconv.ParseInt(str, 10, 64)
-		if err != nil {
-			w.Write([]byte("Set send retry interval failed\n"))
-		} else {
-			atomic.StoreInt64(&mw.userConfig.sendRetryIntervalMilliseconds, val*int64(time.Millisecond))
-			w.Write([]byte(fmt.Sprintf("Set retry interval to %v millisecond successfully\n", val)))
-			sendRetryInterval = val * int64(time.Millisecond)
-		}
-	}
-
-	if str := r.FormValue("sendRetryTimeoutSeconds"); str != "" {
-		val, err := strconv.ParseInt(str, 10, 64)
-		if err != nil {
-			w.Write([]byte("Set send retry timeout failed\n"))
-		} else if val*int64(time.Second) < sendRetryInterval {
-			w.Write([]byte(fmt.Sprintf("Set send retry timeout failed: less than interval %v milliseconds\n",
-				sendRetryInterval)))
-		} else {
-			atomic.StoreInt64(&mw.userConfig.sendRetryTimeoutSeconds, val*int64(time.Second))
-			w.Write([]byte(fmt.Sprintf("Set retry timeout to %v second successfully\n", val)))
-			sendRetryTimeout = val * int64(time.Second)
-		}
-	}
-
-	w.Write([]byte(fmt.Sprintf("Set retry config successfully: interval %s timeout %s\n",
-		time.Duration(sendRetryInterval), time.Duration(sendRetryTimeout))))
 }
 
 func NewMetaWrapper(config *MetaConfig) (*MetaWrapper, error) {
@@ -230,8 +177,6 @@ func NewMetaWrapper(config *MetaConfig) (*MetaWrapper, error) {
 	mw.partCond = sync.NewCond(&mw.partMutex)
 	mw.forceUpdate = make(chan struct{}, 1)
 	mw.forceUpdateLimit = rate.NewLimiter(1, MinForceUpdateMetaPartitionsInterval)
-	mw.userConfig.sendRetryTimeoutSeconds = SendRetryTimeoutSeconds * int64(time.Second)
-	mw.userConfig.sendRetryIntervalMilliseconds = SendRetryIntervalMilliseconds * int64(time.Millisecond)
 
 	limit := MaxMountRetryLimit
 
@@ -253,8 +198,6 @@ func NewMetaWrapper(config *MetaConfig) (*MetaWrapper, error) {
 	if limit <= 0 && err != nil {
 		return nil, err
 	}
-
-	http.HandleFunc("/mwconf", mw.MetaWrapperConfig)
 
 	go mw.refresh()
 	return mw, nil

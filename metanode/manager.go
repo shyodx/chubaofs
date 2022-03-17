@@ -17,7 +17,6 @@ package metanode
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	syslog "log"
 	"net"
 	_ "net/http/pprof"
@@ -84,7 +83,7 @@ func (m *metadataManager) getPacketLabels(p *Packet) (labels map[string]string) 
 
 	mp, err := m.getPartition(p.PartitionID)
 	if err != nil {
-		log.LogErrorf("[metaManager] getPacketLabels metric packet: %v, err: %v", p, err)
+		log.LogInfof("[metaManager] getPacketLabels metric packet: %v, partitions: %v", p, len(m.partitions))
 		return
 	}
 
@@ -289,7 +288,7 @@ func (m *metadataManager) loadPartitions() (err error) {
 		return
 	}
 	// scan the data directory
-	fileInfoList, err := ioutil.ReadDir(m.rootDir)
+	fileInfoList, err := os.ReadDir(m.rootDir)
 	if err != nil {
 		return
 	}
@@ -402,6 +401,8 @@ func (m *metadataManager) createPartition(request *proto.CreateMetaPartitionRequ
 	defer m.mu.Unlock()
 
 	partitionId := fmt.Sprintf("%d", request.PartitionID)
+
+	log.LogInfof("start create meta Partition, partition %s", partitionId)
 
 	mpc := &MetaPartitionConfig{
 		PartitionId: request.PartitionID,

@@ -16,11 +16,12 @@ package master
 
 import (
 	"fmt"
+	"sort"
+	"sync"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/log"
-	"sort"
-	"sync"
 )
 
 type topology struct {
