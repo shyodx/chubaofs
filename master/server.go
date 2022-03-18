@@ -83,6 +83,7 @@ type Server struct {
 	reverseProxy *httputil.ReverseProxy
 	metaReady    bool
 	apiServer    *http.Server
+	localServer  *http.Server
 }
 
 // NewServer creates a new server
@@ -136,6 +137,11 @@ func (m *Server) Shutdown() {
 	if m.apiServer != nil {
 		if err = m.apiServer.Shutdown(context.Background()); err != nil {
 			log.LogErrorf("action[Shutdown] failed, err: %v", err)
+		}
+	}
+	if m.localServer != nil {
+		if err = m.localServer.Shutdown(context.Background()); err != nil {
+			log.LogErrorf("action[Shutdown] localServer failed, err: %v", err)
 		}
 	}
 	m.wg.Done()

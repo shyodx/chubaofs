@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strconv"
+	"strings"
 
 	"github.com/samsarahq/thunder/graphql"
 	"github.com/samsarahq/thunder/graphql/introspection"
@@ -29,7 +30,6 @@ import (
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util/config"
-	"github.com/chubaofs/chubaofs/util/errors"
 	"github.com/chubaofs/chubaofs/util/exporter"
 	"github.com/chubaofs/chubaofs/util/log"
 )
@@ -54,15 +54,20 @@ func (m *Server) startHTTPService(modulename string, cfg *config.Config) {
 		var getRootUserInfo = func(w http.ResponseWriter, r *http.Request) {
 			var rootInfo *proto.UserInfo
 			if !m.partition.IsRaftLeader() {
-				log.LogWarnf("I'm not raft leader")
-				err := errors.NewErrorf("not leader")
+				var port int
+				addr := strings.Split(m.leaderInfo.addr, ":")
+				if len(addr) == 2 {
+					port, _ := strconv.ParseInt(addr[1], 0, 64)
+					port++
+				}
+				err := fmt.Errorf("I'm not raft leader, please try %v on port %v", addr[0], port)
 				sendErrReply(w, r, newErrHTTPReply(err))
 				return
 			}
 
 			if !m.metaReady {
 				log.LogWarnf("leader is not ready")
-				err := errors.NewErrorf("leader not ready")
+				err := fmt.Errorf("leader not ready")
 				sendErrReply(w, r, newErrHTTPReply(err))
 				return
 			}
@@ -76,16 +81,21 @@ func (m *Server) startHTTPService(modulename string, cfg *config.Config) {
 		}
 
 		var switchSimpleAuth = func(w http.ResponseWriter, r *http.Request) {
+			// need set swithSimpleAuth on all master nodes, because
+			// the value don't persist and sync with all master nodes.
 			m.config.enableSimpleAuth = !m.config.enableSimpleAuth
-			msg := fmt.Sprintf("switch enableSimpleAuth to %v", m.config.enableSimpleAuth)
+			msg := fmt.Sprintf("switch enableSimpleAuth to %v, ", m.config.enableSimpleAuth)
+			msg += "need also set enableSimpleAuth on other master nodes"
 			sendOkReply(w, r, newSuccessHTTPReply(msg))
 		}
 
-		http.HandleFunc("/admin/getRoot", getRootUserInfo)
-		http.HandleFunc("/admin/switchSimpleAuth", switchSimpleAuth)
 		newPort, _ := strconv.ParseInt(m.port, 0, 64)
 		newPort++
-		if err = http.ListenAndServe(fmt.Sprintf("127.0.0.1:%v", newPort), nil); err != nil {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/admin/getRoot", getRootUserInfo)
+		mux.HandleFunc("/admin/switchSimpleAuth", switchSimpleAuth)
+		m.localServer = &http.Server{Addr: fmt.Sprintf("127.0.0.1:%v", newPort), Handler: mux}
+		if err = m.localServer.ListenAndServe(); err != nil {
 			log.LogErrorf("localAPI: local http server failed: err(%v)", err)
 			return
 		}
