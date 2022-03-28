@@ -16,11 +16,12 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
+
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/sdk/master"
 	"github.com/spf13/cobra"
-	"sort"
-	"strconv"
 )
 
 const (
@@ -30,8 +31,9 @@ const (
 
 func newDataPartitionCmd(client *master.MasterClient) *cobra.Command {
 	var cmd = &cobra.Command{
-		Use:   cmdDataPartitionUse,
-		Short: cmdDataPartitionShort,
+		Use:     cmdDataPartitionUse,
+		Short:   cmdDataPartitionShort,
+		Aliases: []string{"dp"},
 	}
 	cmd.AddCommand(
 		newDataPartitionGetCmd(client),
