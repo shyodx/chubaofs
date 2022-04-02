@@ -344,3 +344,7 @@ func (rs *RocksDBStore) PutBatchCF(cf *gorocksdb.ColumnFamilyHandle, kvBatch map
 	}
 	return rs.db.Write(wo, wb)
 }
+
+func (rs *RocksDBStore) NewCheckpoint() (*gorocksdb.Checkpoint, error) {
+	return rs.db.NewCheckpoint()
+}
