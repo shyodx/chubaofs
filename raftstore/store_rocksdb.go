@@ -15,10 +15,13 @@
 package raftstore
 
 import (
+	"bytes"
 	"fmt"
+	"math"
 
 	"os"
 
+	"github.com/cubefs/cubefs/util/errors"
 	"github.com/tecbot/gorocksdb"
 )
 
@@ -259,4 +262,85 @@ func (rs *RocksDBStore) CreateColumnFamily(name string) (*gorocksdb.ColumnFamily
 	opts := gorocksdb.NewDefaultOptions()
 	opts.SetCreateIfMissingColumnFamilies(true)
 	return rs.db.CreateColumnFamily(opts, name)
+}
+
+func (rs *RocksDBStore) GetCF(cf *gorocksdb.ColumnFamilyHandle, key []byte) (interface{}, error) {
+	ro := gorocksdb.NewDefaultReadOptions()
+	ro.SetFillCache(false)
+	defer ro.Destroy()
+	slice, err := rs.db.GetCF(ro, cf, key)
+	if err != nil {
+		return nil, err
+	}
+	data := make([]byte, slice.Size())
+	copy(data, slice.Data())
+	slice.Free()
+	return data, nil
+}
+
+func (rs *RocksDBStore) LoadNCF(
+	cf *gorocksdb.ColumnFamilyHandle,
+	nr uint64,
+	loadFunc func(k, v *gorocksdb.Slice) error,
+	skipKeys [][]byte,
+) (cnt uint64, err error) {
+	if nr == 0 {
+		nr = math.MaxUint64
+	}
+
+	ro := gorocksdb.NewDefaultReadOptions()
+	ro.SetFillCache(false)
+	iter := rs.db.NewIteratorCF(ro, cf)
+	defer func() {
+		iter.Close()
+		ro.Destroy()
+	}()
+
+	iter.SeekToFirst()
+	for nr != cnt {
+		if !iter.Valid() {
+			return
+		}
+
+		key := iter.Key()
+		val := iter.Value()
+		for _, k := range skipKeys {
+			if bytes.Compare(key.Data(), k) == 0 {
+				goto next
+			}
+		}
+		if err = loadFunc(iter.Key(), iter.Value()); err != nil {
+			err = errors.NewErrorf("Load [%d/%d] from column family fail: %v", cnt, nr, err)
+			return
+		}
+		cnt++
+	next:
+		key.Free()
+		val.Free()
+
+		iter.Next()
+	}
+	return
+}
+
+func (rs *RocksDBStore) PutCF(cf *gorocksdb.ColumnFamilyHandle, key, value []byte, isSync bool) error {
+	wo := gorocksdb.NewDefaultWriteOptions()
+	wo.SetSync(isSync)
+	defer wo.Destroy()
+	return rs.db.PutCF(wo, cf, key, value)
+}
+
+func (rs *RocksDBStore) PutBatchCF(cf *gorocksdb.ColumnFamilyHandle, kvBatch map[string][]byte, isSync bool) error {
+	wo := gorocksdb.NewDefaultWriteOptions()
+	wb := gorocksdb.NewWriteBatch()
+	defer func() {
+		wo.Destroy()
+		wb.Destroy()
+	}()
+
+	wo.SetSync(isSync)
+	for key, value := range kvBatch {
+		wb.PutCF(cf, []byte(key), value)
+	}
+	return rs.db.Write(wo, wb)
 }
