@@ -70,3 +70,15 @@ func (fl *freeList) Len() int {
 	defer fl.Unlock()
 	return len(fl.index)
 }
+
+func (fl *freeList) ForEach(handler func(item *list.Element) error) error {
+	fl.Lock()
+	defer fl.Unlock()
+	item := fl.list.Front()
+	for item != nil {
+		if err := handler(item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
