@@ -887,3 +887,79 @@ func (mp *metaPartition) loadDentryFromDB(dir string) (err error) {
 
 	return
 }
+
+func (mp *metaPartition) storeExtendToDB(sm *storeMsg) (err error) {
+	var (
+		data []byte
+		cnt  uint64
+	)
+
+	cf, found := mp.metaDB.cfs["extend"]
+	if !found {
+		err = errors.New("extend column family not found")
+		return
+	}
+
+	// save all extends
+	extendHandler := func(item btree.Item) bool {
+		// extend is COW, so no need to lock it
+		extend := item.(*Extend)
+		key := []byte(fmt.Sprintf("%v", extend.inode))
+		if data, err = extend.Bytes(); err != nil {
+			return false
+		}
+		if err = mp.metaDB.db.PutCF(cf, key, data, false); err != nil {
+			return false
+		}
+		cnt++
+		return true
+	}
+
+	sm.extendTree.Ascend(extendHandler)
+
+	log.LogInfof("storeExtendToDB: store complete: partitoinID(%v) volume(%v) numExtends(%v) dirtyExtends(%v)",
+		mp.config.PartitionId, mp.config.VolName, sm.extendTree.Len(), cnt)
+
+	return
+}
+
+func (mp *metaPartition) loadExtendFromDB(dir string) (err error) {
+	var (
+		cf    *gorocksdb.ColumnFamilyHandle
+		found bool
+		nr    uint64
+	)
+
+	if _, err = os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return
+	}
+
+	if cf, found = mp.metaDB.cfs["extend"]; !found {
+		err = fmt.Errorf("extend column family not exist")
+		log.LogError(err)
+		return
+	}
+
+	db := mp.metaDB.db
+
+	loadExtendFunc := func(k, v *gorocksdb.Slice) error {
+		extend, e := NewExtendFromBytes(v.Data())
+		if e != nil {
+			return errors.NewErrorf("[loadExtendFromDB] Unmarshal: %v", e)
+		}
+
+		_ = mp.fsmSetXAttr(extend)
+		return nil
+	}
+	if nr, err = db.LoadNCF(cf, 0, loadExtendFunc, nil); err != nil {
+		panic(err)
+	}
+
+	log.LogInfof("loadExtendFromDB: load complete: partitionID(%v) volume(%v) numExtends(%v)",
+		mp.config.PartitionId, mp.config.VolName, nr)
+
+	return
+}
