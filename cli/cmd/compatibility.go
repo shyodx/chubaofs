@@ -80,7 +80,12 @@ func newMetaCompatibilityCmd() *cobra.Command {
 				Cursor:      cursor,
 				PartitionId: id,
 			}
-			mp := metanode.NewMetaPartition(mpcfg, nil)
+			mp, err := metanode.NewMetaPartition(mpcfg, nil)
+			if err != nil {
+				err = fmt.Errorf("create partition id=%v failed: %v",
+					mpcfg.PartitionId, err)
+				return
+			}
 			err = mp.LoadSnapshot(rootDir)
 			if err != nil {
 				return

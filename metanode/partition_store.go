@@ -47,6 +47,8 @@ const (
 	SnapshotSign    = ".sign"
 	metadataFile    = "meta"
 	metadataFileTmp = ".meta"
+
+	metaDBDir = "metadb"
 )
 
 func (mp *metaPartition) loadMetadata() (err error) {

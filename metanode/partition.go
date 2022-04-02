@@ -35,6 +35,7 @@ import (
 	"github.com/cubefs/cubefs/util/btree"
 	"github.com/cubefs/cubefs/util/errors"
 	"github.com/cubefs/cubefs/util/log"
+	"github.com/tecbot/gorocksdb"
 	raftproto "github.com/tiglabs/raft/proto"
 )
 
@@ -199,6 +200,22 @@ type MetaPartition interface {
 	ForceSetMetaPartitionToFininshLoad()
 }
 
+const (
+	MetaDBInit  uint32 = 0x0
+	MetaDBReady uint32 = 0x1
+	MetaDBClose uint32 = 0x4
+
+	DBLRUCacheSize    = 1000
+	DBWriteBufferSize = 4 * util.MB
+)
+
+type MetaDB struct {
+	// persist inode/dentry/extentd/multipart
+	db     *raftstore.RocksDBStore
+	cfs    map[string]*gorocksdb.ColumnFamilyHandle
+	status uint32 // atomic value
+}
+
 // metaPartition manages the range of the inode IDs.
 // When a new inode is requested, it allocates a new inode id for this inode if possible.
 // States:
@@ -225,6 +242,8 @@ type metaPartition struct {
 	manager                *metadataManager
 	isLoadingMetaPartition bool
 	summaryLock            sync.Mutex
+
+	metaDB *MetaDB
 }
 
 func (mp *metaPartition) ForceSetMetaPartitionToLoadding() {
@@ -304,6 +323,7 @@ func (mp *metaPartition) onStart() (err error) {
 }
 
 func (mp *metaPartition) onStop() {
+	mp.releaseMetaDB()
 	mp.stopRaft()
 	mp.stop()
 	if mp.delInodeFp != nil {
@@ -380,7 +400,7 @@ func (mp *metaPartition) getRaftPort() (heartbeat, replica int, err error) {
 }
 
 // NewMetaPartition creates a new meta partition with the specified configuration.
-func NewMetaPartition(conf *MetaPartitionConfig, manager *metadataManager) MetaPartition {
+func NewMetaPartition(conf *MetaPartitionConfig, manager *metadataManager) (MetaPartition, error) {
 	mp := &metaPartition{
 		config:        conf,
 		dentryTree:    NewBtree(),
@@ -395,7 +415,12 @@ func NewMetaPartition(conf *MetaPartitionConfig, manager *metadataManager) MetaP
 		vol:           NewVol(),
 		manager:       manager,
 	}
-	return mp
+
+	if err := mp.newMetaDB(conf); err != nil {
+		return nil, err
+	}
+
+	return mp, nil
 }
 
 // IsLeader returns the raft leader address and if the current meta partition is the leader.
@@ -478,6 +503,7 @@ func (mp *metaPartition) load() (err error) {
 	if err = mp.loadApplyID(mp.config.RootDir); err != nil {
 		return
 	}
+	mp.metaDB.SetStatus(MetaDBReady)
 	return
 }
 
@@ -702,4 +728,93 @@ func (mp *metaPartition) canRemoveSelf() (canRemove bool, err error) {
 		return
 	}
 	return
+}
+
+func (db *MetaDB) SetStatus(st uint32) {
+	for {
+		oldSt := atomic.LoadUint32(&db.status)
+		newSt := oldSt | st
+		if atomic.CompareAndSwapUint32(&db.status, oldSt, newSt) {
+			break
+		}
+	}
+}
+
+func (db *MetaDB) ClearStatus(st uint32) {
+	for {
+		oldSt := atomic.LoadUint32(&db.status)
+		newSt := oldSt ^ st
+		if atomic.CompareAndSwapUint32(&db.status, oldSt, newSt) {
+			break
+		}
+	}
+}
+
+func (db *MetaDB) TestStatus(st uint32) bool {
+	currSt := atomic.LoadUint32(&db.status)
+	if currSt&st == 0 {
+		return false
+	}
+	return true
+}
+
+func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
+	var cfs []*gorocksdb.ColumnFamilyHandle
+
+	// "default" is not used, but required by rocksdb
+	cfNames := []string{"default", "inode", "orphaninode", "dentry", "extend", "multipart"}
+	metaDB := &MetaDB{
+		cfs:    make(map[string]*gorocksdb.ColumnFamilyHandle),
+		status: MetaDBInit,
+	}
+
+	workDir := path.Join(conf.RootDir, metaDBDir)
+	metaDB.db, cfs, err = raftstore.OpenWithColumnFamilies(
+		workDir, cfNames, DBLRUCacheSize, DBWriteBufferSize)
+	if err != nil {
+		if strings.Contains(err.Error(), "Column family not found") {
+			// column family not exist, create them
+			metaDB.db, err = raftstore.NewRocksDBStore(workDir, DBLRUCacheSize, DBWriteBufferSize)
+			if err == nil {
+				cfs = make([]*gorocksdb.ColumnFamilyHandle, len(cfNames))
+				for i, n := range cfNames[1:] {
+					if cfs[i+1], err = metaDB.db.CreateColumnFamily(n); err != nil {
+						break
+					}
+				}
+			}
+		}
+		if err != nil {
+			for _, cf := range cfs {
+				if cf != nil {
+					// no need to drop cf, the hole directory will be removed
+					cf.Destroy()
+				}
+			}
+			metaDB.db.Close()
+			return err
+		}
+	}
+
+	for i, n := range cfNames {
+		metaDB.cfs[n] = cfs[i]
+	}
+
+	mp.metaDB = metaDB
+	return nil
+}
+
+func (mp *metaPartition) releaseMetaDB() {
+	if mp.metaDB == nil || mp.metaDB.db == nil {
+		return
+	}
+
+	mp.metaDB.ClearStatus(MetaDBReady)
+	mp.metaDB.SetStatus(MetaDBClose)
+	for n, cf := range mp.metaDB.cfs {
+		delete(mp.metaDB.cfs, n)
+		cf.Destroy()
+	}
+
+	mp.metaDB.db.Close()
 }

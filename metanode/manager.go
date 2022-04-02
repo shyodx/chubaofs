@@ -314,7 +314,11 @@ func (m *metadataManager) loadPartitions() (err error) {
 
 			wg.Add(1)
 			go func(fileName string) {
-				var errload error
+				var (
+					errload   error
+					id        uint64
+					partition MetaPartition
+				)
 				defer func() {
 					if r := recover(); r != nil {
 						log.LogErrorf("loadPartitions partition: %s, "+
@@ -334,7 +338,6 @@ func (m *metadataManager) loadPartitions() (err error) {
 					log.LogWarnf("ignore unknown partition dir: %s", fileName)
 					return
 				}
-				var id uint64
 				partitionId := fileName[len(partitionPrefix):]
 				id, errload = strconv.ParseUint(partitionId, 10, 64)
 				if errload != nil {
@@ -366,7 +369,10 @@ func (m *metadataManager) loadPartitions() (err error) {
 					}
 					errload = nil
 				}
-				partition := NewMetaPartition(partitionConfig, m)
+				if partition, errload = NewMetaPartition(partitionConfig, m); errload != nil {
+					log.LogErrorf("create partition id=%d failed: %v", id, err)
+					return
+				}
 				errload = m.attachPartition(id, partition)
 				if errload != nil {
 					log.LogErrorf("load partition id=%d failed: %s.",
@@ -438,7 +444,11 @@ func (m *metadataManager) createPartition(request *proto.CreateMetaPartitionRequ
 		return
 	}
 
-	partition := NewMetaPartition(mpc, m)
+	partition, err := NewMetaPartition(mpc, m)
+	if err != nil {
+		err = errors.NewErrorf("[createPartition]->%s", err.Error())
+		return
+	}
 	if err = partition.PersistMetadata(); err != nil {
 		err = errors.NewErrorf("[createPartition]->%s", err.Error())
 		return
