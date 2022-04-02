@@ -16,6 +16,7 @@ package metanode
 
 import (
 	"bufio"
+	"container/list"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/cubefs/cubefs/util/btree"
 	"github.com/cubefs/cubefs/util/log"
+	"github.com/tecbot/gorocksdb"
 
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/util/errors"
@@ -50,6 +52,51 @@ const (
 
 	metaDBDir = "metadb"
 )
+
+type InodeStats struct {
+	ver    uint32 // HARD CODED, keep ver the first element
+	rsvd   uint32
+	total  uint64
+	cursor uint64
+}
+
+type InodeStatsVerion struct {
+	Ver  uint32
+	Size uint32
+}
+
+var ISVer1 = &InodeStatsVerion{1, 24}
+
+func (is *InodeStats) String() string {
+	return fmt.Sprintf("Ver(%v) Total(%v) Cursor(%v)", is.ver, is.total, is.cursor)
+}
+
+func (is *InodeStats) Marshal() []byte {
+	var data []byte
+	switch is.ver {
+	case ISVer1.Ver:
+		data = make([]byte, ISVer1.Size)
+		binary.BigEndian.PutUint32(data[0:4], is.ver)
+		binary.BigEndian.PutUint64(data[8:16], is.total)
+		binary.BigEndian.PutUint64(data[16:24], is.cursor)
+	}
+	return data
+}
+
+func (is *InodeStats) Unmarshal(data []byte) {
+	is.ver = binary.BigEndian.Uint32(data[0:4])
+	switch is.ver {
+	case ISVer1.Ver:
+		if len(data) != int(ISVer1.Size) {
+			break
+		}
+		is.total = binary.BigEndian.Uint64(data[8:16])
+		is.cursor = binary.BigEndian.Uint64(data[16:24])
+		return
+	}
+	msg := fmt.Sprintf("Unrecognize InodeStats: ver[%v] len[%v]", is.ver, len(data))
+	panic(msg)
+}
 
 func (mp *metaPartition) loadMetadata() (err error) {
 	metaFile := path.Join(mp.config.RootDir, metadataFile)
@@ -603,5 +650,162 @@ func (mp *metaPartition) storeMultipart(rootDir string, sm *storeMsg) (crc uint3
 	crc = crc32.Sum32()
 	log.LogInfof("storeMultipart: store complete: partitoinID(%v) volume(%v) numMultiparts(%v) crc(%v)",
 		mp.config.PartitionId, mp.config.VolName, multipartTree.Len(), crc)
+	return
+}
+
+func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
+	var (
+		data []byte
+		cnt  uint64
+	)
+
+	orphanCF, found := mp.metaDB.cfs["orphaninode"]
+	if !found {
+		err = errors.New("orphan inode column family not found")
+		return
+	}
+	inodeCF, found := mp.metaDB.cfs["inode"]
+	if !found {
+		err = errors.New("inode column family not found")
+		return
+	}
+
+	// save all orphan inodes
+	orphanHandler := func(item *list.Element) error {
+		ino := item.Value.(uint64)
+		key := []byte(fmt.Sprintf("%v", ino))
+		if e := mp.metaDB.db.PutCF(orphanCF, key, nil, false); e != nil {
+			return e
+		}
+		return nil
+	}
+	if err = mp.freeList.ForEach(orphanHandler); err != nil {
+		return
+	}
+
+	// save all inodes
+	inodeHandler := func(item btree.Item) bool {
+		// inode is COW, so no need to lock it
+		inode := item.(*Inode)
+		key := []byte(fmt.Sprintf("%v", inode.Inode))
+		if data, err = inode.Marshal(); err != nil {
+			return false
+		}
+		if err = mp.metaDB.db.PutCF(inodeCF, key, data, false); err != nil {
+			return false
+		}
+		cnt++
+		return true
+	}
+	sm.inodeTree.Ascend(inodeHandler)
+
+	// save InodeStats
+	// FIXME: we only have a COW on the tree, but Cursor is not COW values
+	// FIXME: a larger cursor is safe?
+	is := &InodeStats{
+		ver:    ISVer1.Ver,
+		total:  uint64(sm.inodeTree.Len()),
+		cursor: mp.config.Cursor,
+	}
+	if err = mp.metaDB.db.PutCF(inodeCF, []byte("0"), is.Marshal(), false); err != nil {
+		return err
+	}
+
+	log.LogInfof("storeInodeToDB: store complete: partitoinID(%v) volume(%v) numInodes(%v) dirytInodes(%v)",
+		mp.config.PartitionId, mp.config.VolName, sm.inodeTree.Len(), cnt)
+
+	return
+}
+
+func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
+	var (
+		orphanCF *gorocksdb.ColumnFamilyHandle
+		inodeCF  *gorocksdb.ColumnFamilyHandle
+		data     interface{}
+		is       InodeStats
+		found    bool
+		nr       uint64
+	)
+
+	if _, err = os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return
+	}
+
+	if orphanCF, found = mp.metaDB.cfs["orphaninode"]; !found {
+		err = fmt.Errorf("orphaninode column family not exist")
+		log.LogError(err)
+		return
+	}
+	if inodeCF, found = mp.metaDB.cfs["inode"]; !found {
+		err = fmt.Errorf("inode column family not exist")
+		log.LogError(err)
+		return
+	}
+	db := mp.metaDB.db
+
+	// load all orphan inodes
+	orphInoStr := make([]string, 0)
+	loadOphanFunc := func(k, v *gorocksdb.Slice) error {
+		inoStr := string(v.Data())
+		orphInoStr = append(orphInoStr, inoStr)
+		return nil
+	}
+	if nr, err = db.LoadNCF(orphanCF, 0, loadOphanFunc, nil); err != nil {
+		panic(err)
+	}
+
+	for _, inoStr := range orphInoStr {
+		data, err := db.GetCF(inodeCF, []byte(inoStr))
+		if err != nil {
+			err = fmt.Errorf("Failed load Part(%v) orphan ino(%v) from orphaninode cf: %v",
+				mp.config.PartitionId, inoStr, err)
+			return err
+		}
+		inode := NewInode(0, 0)
+		if err = inode.Unmarshal(data.([]byte)); err != nil {
+			err = fmt.Errorf("Failed unmarshal Part(%v) ino(%v): %v",
+				mp.config.PartitionId, inoStr, err)
+			return err
+		}
+		mp.fsmCreateInode(inode)
+		mp.checkAndInsertFreeList(inode)
+	}
+
+	log.LogInfof("loadInodeFromDB: load orphan complete: partitonid(%v) volume(%v) numinodes(%v)",
+		mp.config.PartitionId, mp.config.VolName, nr)
+
+	// load all inodes
+	loadInodeFunc := func(k, v *gorocksdb.Slice) error {
+		inode := NewInode(0, 0)
+		if e := inode.Unmarshal(v.Data()); e != nil {
+			return errors.NewErrorf("[loadInodeFromDB] Unmarshal: %v", e)
+		}
+		if inode.NLink == 0 {
+			// skip orphan inodes
+			return nil
+		}
+		mp.fsmCreateInode(inode)
+		return nil
+	}
+	skip := [][]byte{[]byte("0")}
+	if nr, err = db.LoadNCF(inodeCF, 0, loadInodeFunc, skip); err != nil {
+		panic(err)
+	}
+
+	// load InodeStat
+	key := []byte(fmt.Sprintf("%v", 0))
+	if data, err = db.GetCF(inodeCF, key); err != nil {
+		log.LogErrorf("[loadInodeFromDB] load statistics info: %v", err)
+		return
+	}
+	is.Unmarshal(data.([]byte))
+
+	mp.config.Cursor = is.cursor
+	log.LogInfof("loadInodeFromDB: load complete: partitonid(%v) volume(%v) numinodes(%v) IS(%v)",
+		mp.config.PartitionId, mp.config.VolName, nr, is.String())
+
 	return
 }
