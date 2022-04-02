@@ -50,7 +50,11 @@ const (
 	metadataFile    = "meta"
 	metadataFileTmp = ".meta"
 
-	metaDBDir = "metadb"
+	metaDBDir              = "metadb"
+	CheckpointDir          = "checkpoint"
+	OldCheckpointDir       = "checkpoint.old"
+	NewCheckpointDir       = "checkpoint.new"
+	CheckpointDirExpPrefix = "expired_checkpoint_"
 )
 
 type InodeStats struct {

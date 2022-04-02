@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"fmt"
 	"io/ioutil"
@@ -207,6 +208,7 @@ const (
 
 	DBLRUCacheSize    = 1000
 	DBWriteBufferSize = 4 * util.MB
+	DBLogSizeForFlush = 128 * util.MB
 )
 
 type MetaDB struct {
@@ -817,4 +819,72 @@ func (mp *metaPartition) releaseMetaDB() {
 	}
 
 	mp.metaDB.db.Close()
+}
+
+func (mp *metaPartition) storeToDB(sm *storeMsg) (err error) {
+	var cp *gorocksdb.Checkpoint
+
+	// cleanup
+	newCPDir := path.Join(mp.config.RootDir, NewCheckpointDir)
+	if _, err = os.Stat(newCPDir); err == nil {
+		if err = os.RemoveAll(newCPDir); err != nil {
+			return
+		}
+	}
+
+	// save dirty data to DB
+	var storeFuncs = []func(sm *storeMsg) error{
+		mp.storeInodeToDB,
+		mp.storeDentryToDB,
+		mp.storeExtendToDB,
+		mp.storeMultipartToDB,
+	}
+	for _, storeFunc := range storeFuncs {
+		if err = storeFunc(sm); err != nil {
+			return
+		}
+	}
+
+	// do new checkpoint and remove old one by the following steps:
+	//  1. mkdir 'checkpoint.new' and do checkpoint in this directory
+	//  2. mv 'checkpoint' to 'checkpoint.old'
+	//  3. mv 'checkpoint.new' to 'checkpoint'
+	//  4. mv 'checkpoint.old' to 'expired_checkpoint'
+	if cp, err = mp.metaDB.db.NewCheckpoint(); err != nil {
+		log.LogErrorf("Failed to new checkpoint: %v", err)
+		return
+	}
+	defer cp.Destroy()
+	if err = cp.CreateCheckpoint(newCPDir, DBLogSizeForFlush); err != nil {
+		return
+	}
+
+	if err = mp.storeApplyID(newCPDir, sm); err != nil {
+		return
+	}
+
+	origCPDir := path.Join(mp.config.RootDir, CheckpointDir)
+	oldCPDir := path.Join(mp.config.RootDir, OldCheckpointDir)
+	// origCPDir does not exist if it's the a new DB
+	if err = os.Rename(origCPDir, oldCPDir); err != nil && !os.IsNotExist(err) {
+		return
+	}
+
+	if err = os.Rename(newCPDir, origCPDir); err != nil {
+		return
+	}
+
+	expiredDir := fmt.Sprintf("%s%v", CheckpointDirExpPrefix, time.Now().UnixNano())
+	expiredCPDir := path.Join(mp.config.RootDir, expiredDir)
+	// oldCPDir does not exist if origCPDir does not exist
+	if err = os.Rename(oldCPDir, expiredCPDir); err != nil && !os.IsNotExist(err) {
+		return
+	}
+
+	// remove old snapshot related directories
+	os.RemoveAll(path.Join(mp.config.RootDir, snapshotDir))
+	os.RemoveAll(path.Join(mp.config.RootDir, snapshotDirTmp))
+	os.RemoveAll(path.Join(mp.config.RootDir, snapshotBackup))
+
+	return nil
 }
