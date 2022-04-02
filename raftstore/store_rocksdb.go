@@ -17,8 +17,9 @@ package raftstore
 import (
 	"fmt"
 
-	"github.com/tecbot/gorocksdb"
 	"os"
+
+	"github.com/tecbot/gorocksdb"
 )
 
 // RocksDBStore is a wrapper of the gorocksdb.DB
@@ -57,6 +58,49 @@ func (rs *RocksDBStore) Open(lruCacheSize, writeBufferSize int) error {
 	rs.db = db
 	return nil
 
+}
+
+func OpenWithColumnFamilies(
+	dir string,
+	cfNames []string,
+	lruCacheSize,
+	writeBufferSize int,
+) (*RocksDBStore, []*gorocksdb.ColumnFamilyHandle, error) {
+	err := os.MkdirAll(dir, os.ModePerm)
+	if err != nil {
+		return nil, nil, err
+	}
+	rs := &RocksDBStore{dir: dir}
+
+	// FIXME: need adjust options?
+	basedTableOptions := gorocksdb.NewDefaultBlockBasedTableOptions()
+	basedTableOptions.SetBlockCache(gorocksdb.NewLRUCache(lruCacheSize))
+	opts := gorocksdb.NewDefaultOptions()
+	opts.SetBlockBasedTableFactory(basedTableOptions)
+	opts.SetCreateIfMissing(true)
+	opts.SetWriteBufferSize(writeBufferSize)
+	opts.SetMaxWriteBufferNumber(2)
+	opts.SetCompression(gorocksdb.NoCompression)
+
+	cfOpts := make([]*gorocksdb.Options, 0)
+	for i := 0; i < len(cfNames); i++ {
+		cfOpt := gorocksdb.NewDefaultOptions()
+		cfOpt.SetCreateIfMissingColumnFamilies(true)
+		cfOpts = append(cfOpts, cfOpt)
+	}
+
+	db, cfs, err := gorocksdb.OpenDbColumnFamilies(opts, dir, cfNames, cfOpts)
+	if err != nil {
+		err = fmt.Errorf("action[OpenWithColumnFamilies] dir[%v]:%v", dir, err)
+		return nil, nil, err
+	}
+	rs.db = db
+	return rs, cfs, nil
+}
+
+func (rs *RocksDBStore) Close() {
+	// FIXME: need flush?
+	rs.db.Close()
 }
 
 // Del deletes a key-value pair.
@@ -208,4 +252,11 @@ func (rs *RocksDBStore) Iterator(snapshot *gorocksdb.Snapshot) *gorocksdb.Iterat
 	ro.SetSnapshot(snapshot)
 
 	return rs.db.NewIterator(ro)
+}
+
+// Create a new column family
+func (rs *RocksDBStore) CreateColumnFamily(name string) (*gorocksdb.ColumnFamilyHandle, error) {
+	opts := gorocksdb.NewDefaultOptions()
+	opts.SetCreateIfMissingColumnFamilies(true)
+	return rs.db.CreateColumnFamily(opts, name)
 }
