@@ -177,3 +177,8 @@ func (e *Extend) Bytes() ([]byte, error) {
 	}
 	return buffer.Bytes(), nil
 }
+
+func (e *Extend) IsDirty() bool {
+	// TODO
+	return true
+}

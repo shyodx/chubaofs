@@ -458,3 +458,8 @@ func MultipartFromBytes(raw []byte) *Multipart {
 	}
 	return muSession
 }
+
+func (m *Multipart) IsDirty() bool {
+	// TODO
+	return true
+}

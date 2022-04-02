@@ -205,6 +205,7 @@ const (
 	MetaDBInit  uint32 = 0x0
 	MetaDBReady uint32 = 0x1
 	MetaDBClose uint32 = 0x4
+	MetaDBNew   uint32 = 0x8 // DB is new until the first checkpoint is done
 
 	DBLRUCacheSize    = 1000
 	DBWriteBufferSize = 4 * util.MB
@@ -785,6 +786,7 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 					}
 				}
 			}
+			metaDB.SetStatus(MetaDBNew)
 		}
 		if err != nil {
 			for _, cf := range cfs {
@@ -885,6 +887,9 @@ func (mp *metaPartition) storeToDB(sm *storeMsg) (err error) {
 	os.RemoveAll(path.Join(mp.config.RootDir, snapshotDir))
 	os.RemoveAll(path.Join(mp.config.RootDir, snapshotDirTmp))
 	os.RemoveAll(path.Join(mp.config.RootDir, snapshotBackup))
+
+	// clear MetaDBNew
+	mp.metaDB.ClearStatus(MetaDBNew)
 
 	return nil
 }

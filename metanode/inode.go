@@ -553,3 +553,8 @@ func (i *Inode) SetMtime() {
 	i.ModifyTime = mtime
 	i.Unlock()
 }
+
+func (i *Inode) IsDirty() bool {
+	// TODO
+	return true
+}

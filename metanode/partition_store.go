@@ -659,8 +659,9 @@ func (mp *metaPartition) storeMultipart(rootDir string, sm *storeMsg) (crc uint3
 
 func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
 	var (
-		data []byte
-		cnt  uint64
+		data    []byte
+		saveAll bool
+		cnt     uint64
 	)
 
 	orphanCF, found := mp.metaDB.cfs["orphaninode"]
@@ -687,18 +688,24 @@ func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
 		return
 	}
 
-	// save all inodes
+	// save all dirty inodes
+	// if it is the first time to save inodes to DB, save them all
+	if mp.metaDB.TestStatus(MetaDBNew) {
+		saveAll = true
+	}
 	inodeHandler := func(item btree.Item) bool {
 		// inode is COW, so no need to lock it
 		inode := item.(*Inode)
-		key := []byte(fmt.Sprintf("%v", inode.Inode))
-		if data, err = inode.Marshal(); err != nil {
-			return false
+		if saveAll || inode.IsDirty() {
+			key := []byte(fmt.Sprintf("%v", inode.Inode))
+			if data, err = inode.Marshal(); err != nil {
+				return false
+			}
+			if err = mp.metaDB.db.PutCF(inodeCF, key, data, false); err != nil {
+				return false
+			}
+			cnt++
 		}
-		if err = mp.metaDB.db.PutCF(inodeCF, key, data, false); err != nil {
-			return false
-		}
-		cnt++
 		return true
 	}
 	sm.inodeTree.Ascend(inodeHandler)
@@ -816,8 +823,9 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 
 func (mp *metaPartition) storeDentryToDB(sm *storeMsg) (err error) {
 	var (
-		data []byte
-		cnt  uint64
+		data    []byte
+		saveAll bool
+		cnt     uint64
 	)
 
 	cf, found := mp.metaDB.cfs["dentry"]
@@ -826,18 +834,24 @@ func (mp *metaPartition) storeDentryToDB(sm *storeMsg) (err error) {
 		return
 	}
 
-	// save all dentries
+	// save all dirty dentries
+	// if it is the first time to save dentries to DB, save them all
+	if mp.metaDB.TestStatus(MetaDBNew) {
+		saveAll = true
+	}
 	dentryHandler := func(item btree.Item) bool {
 		// dentry is COW, so no need to lock it
 		dentry := item.(*Dentry)
-		key := []byte(fmt.Sprintf("%d_%s", dentry.ParentId, dentry.Name))
-		if data, err = dentry.Marshal(); err != nil {
-			return false
+		if saveAll || dentry.IsDirty() {
+			key := []byte(fmt.Sprintf("%d_%s", dentry.ParentId, dentry.Name))
+			if data, err = dentry.Marshal(); err != nil {
+				return false
+			}
+			if err = mp.metaDB.db.PutCF(cf, key, data, false); err != nil {
+				return false
+			}
+			cnt++
 		}
-		if err = mp.metaDB.db.PutCF(cf, key, data, false); err != nil {
-			return false
-		}
-		cnt++
 		return true
 	}
 
@@ -894,8 +908,9 @@ func (mp *metaPartition) loadDentryFromDB(dir string) (err error) {
 
 func (mp *metaPartition) storeExtendToDB(sm *storeMsg) (err error) {
 	var (
-		data []byte
-		cnt  uint64
+		data    []byte
+		saveAll bool
+		cnt     uint64
 	)
 
 	cf, found := mp.metaDB.cfs["extend"]
@@ -904,18 +919,24 @@ func (mp *metaPartition) storeExtendToDB(sm *storeMsg) (err error) {
 		return
 	}
 
-	// save all extends
+	// save all dirty extends
+	// if it is the first time to save extends to DB, save them all
+	if mp.metaDB.TestStatus(MetaDBNew) {
+		saveAll = true
+	}
 	extendHandler := func(item btree.Item) bool {
 		// extend is COW, so no need to lock it
 		extend := item.(*Extend)
-		key := []byte(fmt.Sprintf("%v", extend.inode))
-		if data, err = extend.Bytes(); err != nil {
-			return false
+		if saveAll || extend.IsDirty() {
+			key := []byte(fmt.Sprintf("%v", extend.inode))
+			if data, err = extend.Bytes(); err != nil {
+				return false
+			}
+			if err = mp.metaDB.db.PutCF(cf, key, data, false); err != nil {
+				return false
+			}
+			cnt++
 		}
-		if err = mp.metaDB.db.PutCF(cf, key, data, false); err != nil {
-			return false
-		}
-		cnt++
 		return true
 	}
 
@@ -970,8 +991,9 @@ func (mp *metaPartition) loadExtendFromDB(dir string) (err error) {
 
 func (mp *metaPartition) storeMultipartToDB(sm *storeMsg) (err error) {
 	var (
-		data []byte
-		cnt  uint64
+		data    []byte
+		saveAll bool
+		cnt     uint64
 	)
 
 	cf, found := mp.metaDB.cfs["multipart"]
@@ -980,18 +1002,24 @@ func (mp *metaPartition) storeMultipartToDB(sm *storeMsg) (err error) {
 		return
 	}
 
-	// save all multiparts
+	// save all dirty multiparts
+	// if it is the first time to save multiparts to DB, save them all
+	if mp.metaDB.TestStatus(MetaDBNew) {
+		saveAll = true
+	}
 	multipartHandler := func(item btree.Item) bool {
 		// multipart is COW, so no need to lock it
 		multipart := item.(*Multipart)
-		key := []byte(fmt.Sprintf("%s_%d", multipart.key, multipart.id))
-		if data, err = multipart.Bytes(); err != nil {
-			return false
+		if saveAll || multipart.IsDirty() {
+			key := []byte(fmt.Sprintf("%s_%d", multipart.key, multipart.id))
+			if data, err = multipart.Bytes(); err != nil {
+				return false
+			}
+			if err = mp.metaDB.db.PutCF(cf, key, data, false); err != nil {
+				return false
+			}
+			cnt++
 		}
-		if err = mp.metaDB.db.PutCF(cf, key, data, false); err != nil {
-			return false
-		}
-		cnt++
 		return true
 	}
 
