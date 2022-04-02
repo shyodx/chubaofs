@@ -963,3 +963,75 @@ func (mp *metaPartition) loadExtendFromDB(dir string) (err error) {
 
 	return
 }
+
+func (mp *metaPartition) storeMultipartToDB(sm *storeMsg) (err error) {
+	var (
+		data []byte
+		cnt  uint64
+	)
+
+	cf, found := mp.metaDB.cfs["multipart"]
+	if !found {
+		err = errors.New("multipart column family not found")
+		return
+	}
+
+	// save all multiparts
+	multipartHandler := func(item btree.Item) bool {
+		// multipart is COW, so no need to lock it
+		multipart := item.(*Multipart)
+		key := []byte(fmt.Sprintf("%s_%d", multipart.key, multipart.id))
+		if data, err = multipart.Bytes(); err != nil {
+			return false
+		}
+		if err = mp.metaDB.db.PutCF(cf, key, data, false); err != nil {
+			return false
+		}
+		cnt++
+		return true
+	}
+
+	sm.multipartTree.Ascend(multipartHandler)
+
+	log.LogInfof("storeMultipartToDB: store complete: partitoinID(%v) volume(%v) numMultiparts(%v) dirtyMultiparts(%v)",
+		mp.config.PartitionId, mp.config.VolName, sm.multipartTree.Len(), cnt)
+
+	return
+}
+
+func (mp *metaPartition) loadMultipartFromDB(dir string) (err error) {
+	var (
+		cf    *gorocksdb.ColumnFamilyHandle
+		found bool
+		nr    uint64
+	)
+
+	if _, err = os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return
+	}
+
+	if cf, found = mp.metaDB.cfs["multipart"]; !found {
+		err = fmt.Errorf("multipart column family not exist")
+		log.LogError(err)
+		return
+	}
+
+	db := mp.metaDB.db
+
+	loadMultipartFunc := func(k, v *gorocksdb.Slice) error {
+		multipart := MultipartFromBytes(v.Data())
+		_ = mp.fsmCreateMultipart(multipart)
+		return nil
+	}
+	if nr, err = db.LoadNCF(cf, 0, loadMultipartFunc, nil); err != nil {
+		panic(err)
+	}
+
+	log.LogInfof("loadMultipartFromDB: load complete: partitionID(%v) numMultiparts(%v)",
+		mp.config.PartitionId, nr)
+
+	return
+}
