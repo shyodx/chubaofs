@@ -440,20 +440,22 @@ func (mp *metaPartition) PersistMetadata() (err error) {
 	return
 }
 
-func (mp *metaPartition) LoadSnapshot(snapshotPath string) (err error) {
-	if err = mp.loadInode(snapshotPath); err != nil {
+func (mp *metaPartition) LoadSnapshot(rootDir string) (err error) {
+	if err = mp.loadInode(rootDir); err != nil {
 		return
 	}
-	if err = mp.loadDentry(snapshotPath); err != nil {
+	if err = mp.loadDentry(rootDir); err != nil {
 		return
 	}
-	if err = mp.loadExtend(snapshotPath); err != nil {
+	if err = mp.loadExtend(rootDir); err != nil {
 		return
 	}
-	if err = mp.loadMultipart(snapshotPath); err != nil {
+	if err = mp.loadMultipart(rootDir); err != nil {
 		return
 	}
-	err = mp.loadApplyID(snapshotPath)
+	if err = mp.loadApplyID(rootDir); err != nil {
+		return
+	}
 	return
 }
 
@@ -461,20 +463,21 @@ func (mp *metaPartition) load() (err error) {
 	if err = mp.loadMetadata(); err != nil {
 		return
 	}
-	snapshotPath := path.Join(mp.config.RootDir, snapshotDir)
-	if err = mp.loadInode(snapshotPath); err != nil {
+	if err = mp.loadInode(mp.config.RootDir); err != nil {
 		return
 	}
-	if err = mp.loadDentry(snapshotPath); err != nil {
+	if err = mp.loadDentry(mp.config.RootDir); err != nil {
 		return
 	}
-	if err = mp.loadExtend(snapshotPath); err != nil {
+	if err = mp.loadExtend(mp.config.RootDir); err != nil {
 		return
 	}
-	if err = mp.loadMultipart(snapshotPath); err != nil {
+	if err = mp.loadMultipart(mp.config.RootDir); err != nil {
 		return
 	}
-	err = mp.loadApplyID(snapshotPath)
+	if err = mp.loadApplyID(mp.config.RootDir); err != nil {
+		return
+	}
 	return
 }
 

@@ -56,10 +56,10 @@ func newMetaCompatibilityCmd() *cobra.Command {
 		Args:    cobra.MinimumNArgs(3),
 		Run: func(cmd *cobra.Command, args []string) {
 			var (
-				err          error
-				snapshotPath = args[0]
-				host         = args[1]
-				pid          = args[2]
+				err     error
+				rootDir = args[0]
+				host    = args[1]
+				pid     = args[2]
 			)
 			client := api.NewMetaHttpClient(host, false)
 			defer func() {
@@ -81,7 +81,7 @@ func newMetaCompatibilityCmd() *cobra.Command {
 				PartitionId: id,
 			}
 			mp := metanode.NewMetaPartition(mpcfg, nil)
-			err = mp.LoadSnapshot(snapshotPath)
+			err = mp.LoadSnapshot(rootDir)
 			if err != nil {
 				return
 			}

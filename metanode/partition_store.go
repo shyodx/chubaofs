@@ -87,13 +87,8 @@ func (mp *metaPartition) loadMetadata() (err error) {
 
 func (mp *metaPartition) loadInode(rootDir string) (err error) {
 	var numInodes uint64
-	defer func() {
-		if err == nil {
-			log.LogInfof("loadInode: load complete: partitonID(%v) volume(%v) numInodes(%v)",
-				mp.config.PartitionId, mp.config.VolName, numInodes)
-		}
-	}()
-	filename := path.Join(rootDir, inodeFile)
+
+	filename := path.Join(rootDir, snapshotDir, inodeFile)
 	if _, err = os.Stat(filename); err != nil {
 		err = nil
 		return
@@ -143,18 +138,17 @@ func (mp *metaPartition) loadInode(rootDir string) (err error) {
 		}
 		numInodes += 1
 	}
+
+	log.LogInfof("loadinode: load complete: partitonid(%v) volume(%v) numinodes(%v)",
+		mp.config.PartitionId, mp.config.VolName, numInodes)
+	return
 }
 
 // Load dentry from the dentry snapshot.
 func (mp *metaPartition) loadDentry(rootDir string) (err error) {
 	var numDentries uint64
-	defer func() {
-		if err == nil {
-			log.LogInfof("loadDentry: load complete: partitonID(%v) volume(%v) numDentries(%v)",
-				mp.config.PartitionId, mp.config.VolName, numDentries)
-		}
-	}()
-	filename := path.Join(rootDir, dentryFile)
+
+	filename := path.Join(rootDir, snapshotDir, dentryFile)
 	if _, err = os.Stat(filename); err != nil {
 		err = nil
 		return
@@ -209,11 +203,15 @@ func (mp *metaPartition) loadDentry(rootDir string) (err error) {
 		}
 		numDentries += 1
 	}
+
+	log.LogInfof("loadDentry: load complete: partitonID(%v) volume(%v) numDentries(%v)",
+		mp.config.PartitionId, mp.config.VolName, numDentries)
+	return
 }
 
 func (mp *metaPartition) loadExtend(rootDir string) error {
 	var err error
-	filename := path.Join(rootDir, extendFile)
+	filename := path.Join(rootDir, snapshotDir, extendFile)
 	if _, err = os.Stat(filename); err != nil {
 		return nil
 	}
@@ -257,7 +255,7 @@ func (mp *metaPartition) loadExtend(rootDir string) error {
 
 func (mp *metaPartition) loadMultipart(rootDir string) error {
 	var err error
-	filename := path.Join(rootDir, multipartFile)
+	filename := path.Join(rootDir, snapshotDir, multipartFile)
 	if _, err = os.Stat(filename); err != nil {
 		return nil
 	}
@@ -297,7 +295,7 @@ func (mp *metaPartition) loadMultipart(rootDir string) error {
 }
 
 func (mp *metaPartition) loadApplyID(rootDir string) (err error) {
-	filename := path.Join(rootDir, applyIDFile)
+	filename := path.Join(rootDir, snapshotDir, applyIDFile)
 	if _, err = os.Stat(filename); err != nil {
 		err = nil
 		return
