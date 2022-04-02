@@ -809,3 +809,81 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 
 	return
 }
+
+func (mp *metaPartition) storeDentryToDB(sm *storeMsg) (err error) {
+	var (
+		data []byte
+		cnt  uint64
+	)
+
+	cf, found := mp.metaDB.cfs["dentry"]
+	if !found {
+		err = errors.New("dentry column family not found")
+		return
+	}
+
+	// save all dentries
+	dentryHandler := func(item btree.Item) bool {
+		// dentry is COW, so no need to lock it
+		dentry := item.(*Dentry)
+		key := []byte(fmt.Sprintf("%d_%s", dentry.ParentId, dentry.Name))
+		if data, err = dentry.Marshal(); err != nil {
+			return false
+		}
+		if err = mp.metaDB.db.PutCF(cf, key, data, false); err != nil {
+			return false
+		}
+		cnt++
+		return true
+	}
+
+	sm.dentryTree.Ascend(dentryHandler)
+
+	log.LogInfof("storeDentryToDB: store complete: partitoinID(%v) volume(%v) numDentries(%v) dirtyDentries(%v)",
+		mp.config.PartitionId, mp.config.VolName, sm.dentryTree.Len(), cnt)
+
+	return
+}
+
+func (mp *metaPartition) loadDentryFromDB(dir string) (err error) {
+	var (
+		cf    *gorocksdb.ColumnFamilyHandle
+		found bool
+		nr    uint64
+	)
+
+	if _, err = os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return
+	}
+
+	if cf, found = mp.metaDB.cfs["dentry"]; !found {
+		err = fmt.Errorf("dentry column family not exist")
+		log.LogError(err)
+		return
+	}
+
+	db := mp.metaDB.db
+
+	loadDentryFunc := func(k, v *gorocksdb.Slice) error {
+		dentry := &Dentry{}
+		if e := dentry.Unmarshal(v.Data()); e != nil {
+			return errors.NewErrorf("[loadDentryFromDB] Unmarshal: %v", e)
+		}
+
+		if status := mp.fsmCreateDentry(dentry, true); status != proto.OpOk {
+			return errors.NewErrorf("[loadDentryFromDB] createDentry dentry: %v, resp code: %d", dentry, status)
+		}
+		return nil
+	}
+	if nr, err = db.LoadNCF(cf, 0, loadDentryFunc, nil); err != nil {
+		panic(err)
+	}
+
+	log.LogInfof("loadDentryFromDB: load complete: partitonID(%v) volume(%v) numDentries(%v)",
+		mp.config.PartitionId, mp.config.VolName, nr)
+
+	return
+}
