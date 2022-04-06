@@ -761,6 +761,50 @@ func (db *MetaDB) TestStatus(st uint32) bool {
 	return true
 }
 
+func cleanupStaleDBData(rootDir string, victimName string) error {
+	victimDir := path.Join(rootDir, victimName)
+	expName := fmt.Sprintf("%s%v", CheckpointDirExpPrefix, time.Now().UnixNano())
+	expPath := path.Join(rootDir, expName)
+	if err := os.Rename(victimDir, expPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// there may have several directories related checkpoint:
+//  * 'snapshot': has the highest priority, if it exists, load it, and ignore
+//                other directories
+//  * 'metaDB': is the workspace of rocksdb, it may contains newer data compared
+//              with 'checkpoint'. So when starting up a mp, data in 'metaDB'
+//              should not be used, and 'metaDB' should be rolled back to
+//              'checkpoint'
+//  * 'checkpoint': is the latest applied data, it has a higher priority than
+//                  'checkpoint.old'
+//  * 'checkpoint.old': is a backup for 'checkpoint'
+//  * 'checkpoint.new': is an unfinished checkpoint, should not be used
+//  * 'expired_checkpoint_xxx': contains stale data, should be deleted
+//
+// In one word, only 'checkpoint' or 'checkpoint.old' could be used.
+//
+// remove 'metaDB' && 'checkpoint.new'
+//         |
+//         v
+// check if 'checkpoint' exist
+//       Y /               \ N
+//         |             check if 'checkpoint.old' exist
+//         |                          Y /          \ N
+//         |                rename to 'checkpoint' |
+//         v                           |           |
+// remove 'checkpoint.old' <-----------'           |
+//         |                                       |
+//         v                                       |
+// create checkpoint at 'metaDB'                   |
+//         |                                       |
+//         v                                       |
+// remove 'checkpoint.old'                         |
+//         |                                       |
+//         v                                       |
+// open DB in 'metaDB' <---------------------------'
 func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 	var cfs []*gorocksdb.ColumnFamilyHandle
 
@@ -771,7 +815,83 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 		status: MetaDBInit,
 	}
 
+	// cleanup 'metaDB' & 'checkpoint.new'
+	err = cleanupStaleDBData(conf.RootDir, metaDBDir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	err = cleanupStaleDBData(conf.RootDir, NewCheckpointDir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	// find 'checkpoint' or 'checkpoint.old'
+	cpDir := path.Join(conf.RootDir, CheckpointDir)
+	st, err := os.Stat(cpDir)
+	if (err != nil && !os.IsNotExist(err)) || (st != nil && !st.IsDir()) {
+		err = fmt.Errorf("Invalid checkpoint dir[%s]: %v", cpDir, err)
+		log.LogError(err)
+		return err
+	}
+
+	if os.IsNotExist(err) {
+		cpOldDir := path.Join(conf.RootDir, OldCheckpointDir)
+		st, err = os.Stat(cpOldDir)
+		if (err != nil && !os.IsNotExist(err)) || (st != nil && !st.IsDir()) {
+			err = fmt.Errorf("Invalid checkpoint dir[%s]: %v", cpOldDir, err)
+			log.LogError(err)
+			return err
+		}
+		if err == nil {
+			if e := os.Rename(cpOldDir, cpDir); e != nil {
+				err = fmt.Errorf("Unable to rename [%s] -> [%s]: %v", cpOldDir, cpDir, e)
+				log.LogError(err)
+				return err
+			}
+		}
+	}
+
+	// clear 'checkpoint.old'
+	if e := cleanupStaleDBData(conf.RootDir, OldCheckpointDir); e != nil && !os.IsNotExist(err) {
+		log.LogErrorf("Failed to cleanup partition[%v] [%s]: %v", mp.config.PartitionId, OldCheckpointDir, e)
+		return e
+	}
+
 	workDir := path.Join(conf.RootDir, metaDBDir)
+	if err == nil {
+		// keep the current checkpoint until new checkpoint is create
+		store, cfs, err := raftstore.OpenWithColumnFamilies(cpDir, cfNames, DBLRUCacheSize, DBWriteBufferSize)
+		if err != nil {
+			log.LogErrorf("Failed to create or open DB in [%s]: %v", cpDir, err)
+			return err
+		}
+		cp, err := store.NewCheckpoint()
+		if err != nil {
+			log.LogErrorf("Failed to new checkpoint: %v", err)
+			for _, cf := range cfs {
+				cf.Destroy()
+			}
+			store.Close()
+			return err
+		}
+		if err = cp.CreateCheckpoint(workDir, 0); err != nil {
+			log.LogError("Failed to rollback to checkpoint: %v", err)
+			cp.Destroy()
+			for _, cf := range cfs {
+				cf.Destroy()
+			}
+			store.Close()
+			os.RemoveAll(workDir)
+			return err
+		}
+		cp.Destroy()
+		for _, cf := range cfs {
+			cf.Destroy()
+		}
+		store.Close()
+	}
+
 	metaDB.db, cfs, err = raftstore.OpenWithColumnFamilies(
 		workDir, cfNames, DBLRUCacheSize, DBWriteBufferSize)
 	if err != nil {
