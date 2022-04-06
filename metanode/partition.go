@@ -1173,3 +1173,47 @@ func (mp *metaPartition) ReclaimColdInodes() {
 		}
 	}
 }
+
+func (mp *metaPartition) ReadInodeFromDB(ino uint64, ro bool) (btree.Item, error) {
+	cf, found := mp.metaDB.cfs["inode"]
+	if !found {
+		err := errors.New("inode Column Family not found")
+		log.LogError(err)
+		return nil, err
+	}
+
+	key := []byte(fmt.Sprintf("%v", ino))
+	item, err := mp.metaDB.db.GetCF(cf, key)
+	if err != nil {
+		// TODO: if is ENOENT, do not print error message
+		log.LogErrorf("Failed to get ino %v from DB: %v", ino, err)
+		return nil, err
+	}
+
+	data := item.([]byte)
+	inode := &Inode{Inode:ino}
+	if err = inode.Unmarshal(data); err != nil {
+		log.LogErrorf("Failed to unmarshal ino %v: %v", ino, err)
+		return nil, err
+	}
+
+	if status := mp.fsmCreateInode(inode); status != proto.OpOk {
+		var newItem btree.Item
+		// someone loads the same inode for us
+		if ro {
+			newItem = mp.inodeTree.GetForRead(inode)
+		} else {
+			newItem = mp.inodeTree.GetForWrite(inode)
+		}
+		if newItem == nil {
+			err = fmt.Errorf("Create new inode ino(%v) get %v but still cannot get inode from tree",
+				ino, status)
+			log.LogError(err)
+			return nil, err
+		}
+		inode = newItem.(*Inode)
+	}
+
+	inode.MarkReady()
+	return inode, nil
+}

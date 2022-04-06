@@ -51,8 +51,12 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 	resp.Status = proto.OpOk
 	item := mp.inodeTree.GetForWrite(ino)
 	if item == nil {
-		resp.Status = proto.OpNotExistErr
-		return
+		var err error
+		if item, err = mp.ReadInodeFromDB(ino.Inode, false); err != nil {
+			log.LogErrorf("Read inode(%v) from DB item is nil: %v", ino.Inode, err)
+			resp.Status = proto.OpNotExistErr
+			return
+		}
 	}
 	i := item.(*Inode)
 	if i.ShouldDelete() {
@@ -70,8 +74,12 @@ func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
 	resp.Status = proto.OpOk
 	item := mp.inodeTree.GetForRead(ino)
 	if item == nil {
-		resp.Status = proto.OpNotExistErr
-		return
+		var err error
+		if item, err = mp.ReadInodeFromDB(ino.Inode, true); err != nil {
+			log.LogErrorf("Read inode(%v) item is nil: %v", ino.Inode, err)
+			resp.Status = proto.OpNotExistErr
+			return
+		}
 	}
 	i := item.(*Inode)
 	if i.ShouldDelete() {
@@ -90,8 +98,12 @@ func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
 func (mp *metaPartition) hasInode(ino *Inode) (ok bool) {
 	item := mp.inodeTree.GetForRead(ino)
 	if item == nil {
-		ok = false
-		return
+		var err error
+		if item, err = mp.ReadInodeFromDB(ino.Inode, true); err != nil {
+			log.LogErrorf("Read inode(%v) item is nil: %v", ino.Inode, err)
+			ok = false
+			return
+		}
 	}
 	i := item.(*Inode)
 	if i.ShouldDelete() {
@@ -109,12 +121,17 @@ func (mp *metaPartition) Ascend(f func(i btree.Item) bool) {
 
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
+	var err error
+
 	resp = NewInodeResponse()
 	resp.Status = proto.OpOk
 	item := mp.inodeTree.GetForWrite(ino)
 	if item == nil {
-		resp.Status = proto.OpNotExistErr
-		return
+		if item, err = mp.ReadInodeFromDB(ino.Inode, false); err != nil {
+			log.LogErrorf("Read inode(%v) from BD item is nil: %v", ino.Inode, err)
+			resp.Status = proto.OpNotExistErr
+			return
+		}
 	}
 	inode := item.(*Inode)
 	if inode.ShouldDelete() {
@@ -153,7 +170,15 @@ func (mp *metaPartition) fsmUnlinkInodeBatch(ib InodeBatch) (resp []*InodeRespon
 }
 
 func (mp *metaPartition) internalHasInode(ino *Inode) bool {
-	return mp.inodeTree.Has(ino)
+	exist := mp.inodeTree.Has(ino)
+	if exist {
+		return true
+	}
+	if _, err := mp.ReadInodeFromDB(ino.Inode, true); err != nil {
+		log.LogErrorf("Read inode(%v) item is nil: %v", ino.Inode, err)
+		return false
+	}
+	return true
 }
 
 func (mp *metaPartition) internalDelete(val []byte) (err error) {
@@ -206,8 +231,12 @@ func (mp *metaPartition) fsmAppendExtents(ino *Inode) (status uint8) {
 	status = proto.OpOk
 	item := mp.inodeTree.GetForWrite(ino)
 	if item == nil {
-		status = proto.OpNotExistErr
-		return
+		var err error
+		if item, err = mp.ReadInodeFromDB(ino.Inode, false); err != nil {
+			log.LogErrorf("Read inode(%v) from DB item is nil: %v", ino.Inode, err)
+			status = proto.OpNotExistErr
+			return
+		}
 	}
 	ino2 := item.(*Inode)
 	if ino2.ShouldDelete() {
@@ -226,8 +255,12 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode) (status uint8) {
 	status = proto.OpOk
 	item := mp.inodeTree.GetForWrite(ino)
 	if item == nil {
-		status = proto.OpNotExistErr
-		return
+		var err error
+		if item, err = mp.ReadInodeFromDB(ino.Inode, false); err != nil {
+			log.LogErrorf("Read inode(%v) from DB item is nil: %v", ino.Inode, err)
+			status = proto.OpNotExistErr
+			return
+		}
 	}
 	ino2 := item.(*Inode)
 	if ino2.ShouldDelete() {
@@ -264,8 +297,12 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 	resp.Status = proto.OpOk
 	item := mp.inodeTree.GetForWrite(ino)
 	if item == nil {
-		resp.Status = proto.OpNotExistErr
-		return
+		var err error
+		if item, err = mp.ReadInodeFromDB(ino.Inode, false); err != nil {
+			log.LogErrorf("Read inode(%v) from DB item is nil: %v", ino.Inode, err)
+			resp.Status = proto.OpNotExistErr
+			return
+		}
 	}
 	i := item.(*Inode)
 	if i.ShouldDelete() {
@@ -292,8 +329,12 @@ func (mp *metaPartition) fsmEvictInode(ino *Inode) (resp *InodeResponse) {
 	resp.Status = proto.OpOk
 	item := mp.inodeTree.GetForWrite(ino)
 	if item == nil {
-		resp.Status = proto.OpNotExistErr
-		return
+		var err error
+		if item, err = mp.ReadInodeFromDB(ino.Inode, false); err != nil {
+			log.LogErrorf("Read inode(%v) from BD item is nil: %v", ino.Inode, err)
+			resp.Status = proto.OpNotExistErr
+			return
+		}
 	}
 	i := item.(*Inode)
 	if i.ShouldDelete() {
@@ -336,7 +377,10 @@ func (mp *metaPartition) fsmSetAttr(req *SetattrRequest) (err error) {
 	ino := NewInode(req.Inode, req.Mode)
 	item := mp.inodeTree.GetForWrite(ino)
 	if item == nil {
-		return
+		if item, err = mp.ReadInodeFromDB(ino.Inode, false); err != nil {
+			log.LogErrorf("Read inode(%v) from BD item is nil: %v", ino.Inode, err)
+			return
+		}
 	}
 	ino = item.(*Inode)
 	if ino.ShouldDelete() {

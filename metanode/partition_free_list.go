@@ -145,6 +145,7 @@ func (mp *metaPartition) deleteWorker() {
 			}
 
 			//check inode nlink == 0 and deletMarkFlag unset
+			// all orphan inodes are resistent in memory
 			if inode, ok := mp.inodeTree.GetForWrite(&Inode{Inode: ino}).(*Inode); ok {
 				if inode.ShouldDelayDelete() {
 					log.LogDebugf("[metaPartition] deleteWorker delay to remove inode: %v as NLink is 0", inode)
@@ -232,6 +233,7 @@ func (mp *metaPartition) deleteMarkedInodes(inoSlice []uint64) {
 	allInodes := make([]*Inode, 0)
 	for _, ino := range inoSlice {
 		ref := &Inode{Inode: ino}
+		// all orphan inodes are resistent in memory
 		inode, ok := mp.inodeTree.GetForWrite(ref).(*Inode)
 		if !ok {
 			continue

@@ -40,8 +40,12 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 	var parIno *Inode
 	if !forceUpdate {
 		if item == nil {
-			status = proto.OpNotExistErr
-			return
+			var err error
+			if item, err = mp.ReadInodeFromDB(dentry.ParentId, false); err != nil {
+				log.LogErrorf("Read inode(%v) from DB item is nil: %v", dentry.ParentId, err)
+				status = proto.OpNotExistErr
+				return
+			}
 		}
 		parIno = item.(*Inode)
 		if parIno.ShouldDelete() {
@@ -117,6 +121,12 @@ func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
 	} else {
 		mp.inodeTree.CopyFind(NewInode(dentry.ParentId, 0),
 			func(item btree.Item) {
+				if item == nil {
+					var err error
+					if item, err = mp.ReadInodeFromDB(dentry.ParentId); err != nil {
+						return
+					}
+				}
 				if item != nil {
 					ino := item.(*Inode)
 					if !ino.ShouldDelete() {
