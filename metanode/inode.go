@@ -68,7 +68,8 @@ type Inode struct {
 	//Extents    *ExtentsTree
 	Extents *SortedExtents
 
-	ver uint64 // used only for Btree
+	ver      uint64 // used only for Btree
+	wbStatus uint32 // need write back to rocksdb
 }
 
 type InodeBatch []*Inode
@@ -111,6 +112,7 @@ func NewInode(ino uint64, t uint32) *Inode {
 		ModifyTime: ts,
 		NLink:      1,
 		Extents:    NewSortedExtents(),
+		wbStatus:   WritebackFree,
 	}
 	if proto.IsDir(t) {
 		i.NLink = 2
@@ -144,6 +146,7 @@ func (i *Inode) Copy() btree.Item {
 	newIno.Flag = i.Flag
 	newIno.Reserved = i.Reserved
 	newIno.Extents = i.Extents.Clone()
+	newIno.wbStatus = i.wbStatus
 	i.RUnlock()
 	return newIno
 }
@@ -555,6 +558,20 @@ func (i *Inode) SetMtime() {
 }
 
 func (i *Inode) IsDirty() bool {
-	// TODO
-	return true
+	i.RLock()
+	dirty := (i.wbStatus != WritebackFree)
+	i.RUnlock()
+	return dirty
+}
+
+func (i *Inode) MarkDirty() {
+	i.Lock()
+	i.wbStatus = WritebackNeed
+	i.Unlock()
+}
+
+func (i *Inode) MarkReady() {
+	i.Lock()
+	i.wbStatus = WritebackFree
+	i.Unlock()
 }

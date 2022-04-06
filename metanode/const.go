@@ -177,3 +177,9 @@ const (
 	MB
 	GB
 )
+
+const (
+	WritebackFree uint32 = 0 // no need to writeback the inode
+	WritebackNew  uint32 = 1 // this is a newly create inode, do not writeback for now
+	WritebackNeed uint32 = 2 // inode needs to be wroten back
+)

@@ -38,6 +38,8 @@ func NewInodeResponse() *InodeResponse {
 // Create and inode and attach it to the inode tree.
 func (mp *metaPartition) fsmCreateInode(ino *Inode) (status uint8) {
 	status = proto.OpOk
+	// ino cannot be referenced by now, it's safe to change inode without lock
+	ino.refcnt = 1
 	if _, ok := mp.inodeTree.ReplaceOrInsert(ino, false); !ok {
 		status = proto.OpExistErr
 	}
@@ -58,6 +60,7 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 		return
 	}
 	i.IncNLink()
+	i.MarkDirty()
 	resp.Msg = i
 	return
 }
@@ -126,6 +129,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 	}
 
 	inode.DecNLink()
+	inode.MarkDirty()
 
 	//Fix#760: when nlink == 0, push into freeList and delay delete inode after 7 days
 	if inode.IsTempFile() {
@@ -212,6 +216,7 @@ func (mp *metaPartition) fsmAppendExtents(ino *Inode) (status uint8) {
 	}
 	eks := ino.Extents.CopyExtents()
 	delExtents := ino2.AppendExtents(eks, ino.ModifyTime)
+	ino2.MarkDirty()
 	log.LogInfof("fsmAppendExtents inode(%v) deleteExtents(%v)", ino2.Inode, delExtents)
 	mp.extDelCh <- delExtents
 	return
@@ -246,6 +251,8 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode) (status uint8) {
 	msg := fmt.Sprintf("fsmAppendExtentWithCheck inode(%v) ek(%v) server deleteExtents(%v) request discardExtents(%v) status(%v)", ino2.Inode, eks[0], delExtents, discardExtentKey, status)
 	if status != proto.OpOk {
 		log.LogError(msg)
+	} else {
+		ino2.MarkDirty()
 	}
 	log.LogInfo(msg)
 	return
@@ -271,6 +278,7 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 	}
 
 	delExtents := i.ExtentsTruncate(ino.Size, ino.ModifyTime)
+	ino.MarkDirty()
 
 	// now we should delete the extent
 	log.LogInfof("fsmExtentsTruncate inode(%v) exts(%v)", i.Inode, delExtents)
@@ -335,5 +343,6 @@ func (mp *metaPartition) fsmSetAttr(req *SetattrRequest) (err error) {
 		return
 	}
 	ino.SetAttr(req)
+	ino.MarkDirty()
 	return
 }

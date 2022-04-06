@@ -122,6 +122,7 @@ func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
 					if !ino.ShouldDelete() {
 						ino.DecNLink()
 						ino.SetMtime()
+						ino.MarkDirty()
 					}
 				}
 			})

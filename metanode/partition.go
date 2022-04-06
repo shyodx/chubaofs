@@ -210,6 +210,8 @@ const (
 	DBLRUCacheSize    = 1000
 	DBWriteBufferSize = 4 * util.MB
 	DBLogSizeForFlush = 128 * util.MB
+	WritebackLimit    = 1000
+	WritebackInterval = time.Millisecond // FIXME: is millisecond appropriate?
 )
 
 type MetaDB struct {
@@ -218,7 +220,10 @@ type MetaDB struct {
 	cfs    map[string]*gorocksdb.ColumnFamilyHandle
 	status uint32 // atomic value
 
+	wbC   chan *Inode // writeback chan
 	stopC chan struct{}
+
+	snapshotLock sync.Mutex // avoid race between snapshot and writeback
 }
 
 // metaPartition manages the range of the inode IDs.
@@ -815,6 +820,7 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 	metaDB := &MetaDB{
 		cfs:    make(map[string]*gorocksdb.ColumnFamilyHandle),
 		status: MetaDBInit,
+		wbC:    make(chan *Inode, WritebackLimit),
 		stopC:  make(chan struct{}),
 	}
 
@@ -929,6 +935,7 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 
 	mp.metaDB = metaDB
 
+	go mp.WritebackDirtyInodes()
 	go mp.RemoveExpiredCheckpoints()
 
 	return nil
@@ -943,8 +950,12 @@ func (mp *metaPartition) releaseMetaDB() {
 	mp.metaDB.SetStatus(MetaDBClose)
 	close(mp.metaDB.stopC)
 	for n, cf := range mp.metaDB.cfs {
+		// wait snapshot to finish if there is a snapshot is wroten
+		// FIXME: need enlarge the lock's granularity?
+		mp.metaDB.snapshotLock.Lock()
 		delete(mp.metaDB.cfs, n)
 		cf.Destroy()
+		mp.metaDB.snapshotLock.Unlock()
 	}
 
 	mp.metaDB.db.Close()
@@ -960,6 +971,17 @@ func (mp *metaPartition) storeToDB(sm *storeMsg) (err error) {
 			return
 		}
 	}
+
+	// wait another snapshot or writeback to finish
+	mp.metaDB.snapshotLock.Lock()
+	defer func() {
+		mp.metaDB.snapshotLock.Unlock()
+		if err == nil {
+			mp.metaDB.db.Flush()
+		} else {
+			os.RemoveAll(newCPDir)
+		}
+	}()
 
 	// save dirty data to DB
 	var storeFuncs = []func(sm *storeMsg) error{
@@ -1048,6 +1070,58 @@ func (mp *metaPartition) RemoveExpiredCheckpoints() {
 			}
 			// FIXME: use a new channel to receive expired directory directly?
 		case <-mp.metaDB.stopC:
+			return
+		}
+	}
+}
+
+func (mp *metaPartition) WritebackDirtyInodes() {
+	for {
+		select {
+		case ino := <-mp.metaDB.wbC:
+			// wait snapshot to finish
+			mp.metaDB.snapshotLock.Lock()
+			ino.Lock()
+			if ino.NLink == 0 {
+				ino.Unlock()
+				mp.metaDB.snapshotLock.Unlock()
+				panic("should not write back orphan inode")
+				continue
+			}
+			if ino.wbStatus == WritebackFree {
+				// snapshot writes the inode back for us
+				ino.Unlock()
+				mp.metaDB.snapshotLock.Unlock()
+				continue
+			}
+			newInode := ino.Copy().(*Inode)
+			ino.wbStatus = WritebackFree
+			ino.Unlock()
+			// save newInode to rocksdb
+			data, err := newInode.Marshal()
+			if err != nil {
+				ino.Lock()
+				ino.wbStatus = WritebackNeed
+				ino.Unlock()
+				mp.metaDB.snapshotLock.Unlock()
+				// TODO: reinsert
+				panic(err)
+			}
+
+			if cf, found := mp.metaDB.cfs["inode"]; found {
+				key := []byte(fmt.Sprintf("%v", newInode.Inode))
+				err = mp.metaDB.db.PutCF(cf, key, data, false)
+				if err != nil {
+					log.LogErrorf("Put ino %v fail: %v", newInode.Inode, err)
+				}
+			} else {
+				log.LogErrorf("Column Family not found")
+				panic("inode column family not found")
+			}
+			mp.metaDB.snapshotLock.Unlock()
+			time.Sleep(WritebackInterval)
+		case <-mp.metaDB.stopC:
+			close(mp.metaDB.wbC)
 			return
 		}
 	}
