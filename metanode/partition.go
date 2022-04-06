@@ -211,10 +211,10 @@ const (
 	DBLRUCacheSize    = 1000
 	DBWriteBufferSize = 4 * util.MB
 	DBLogSizeForFlush = 128 * util.MB
-	ColdTimeMax       = time.Hour
-	AccessTimeMax     = 24 * 3600 // unit: second
+	ColdTimeMax       = time.Minute //time.Hour
+	AccessTimeMax     = 60 //24 * 3600 // unit: second
 	ReclaimInterval   = time.Minute
-	ReclaimStartCnt   = 100
+	ReclaimStartCnt   = 1 //100
 	ReclaimLimit      = 10
 	ReclaimScanLimit  = 100
 )
@@ -828,11 +828,13 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 	}
 
 	// cleanup 'metaDB' & 'checkpoint.new'
+	log.LogCriticalf("DEBUG: cleanup Part(%v) [%s]", mp.config.PartitionId, metaDBDir)
 	err = cleanupStaleDBData(conf.RootDir, metaDBDir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
+	log.LogCriticalf("DEBUG: cleanup Part(%v) [%s]", mp.config.PartitionId, NewCheckpointDir)
 	err = cleanupStaleDBData(conf.RootDir, NewCheckpointDir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -848,14 +850,17 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 	}
 
 	if os.IsNotExist(err) {
+		log.LogCriticalf("DEBUG: Part(%v) %v not exist check %v", mp.config.PartitionId, CheckpointDir, OldCheckpointDir)
 		cpOldDir := path.Join(conf.RootDir, OldCheckpointDir)
 		st, err = os.Stat(cpOldDir)
 		if (err != nil && !os.IsNotExist(err)) || (st != nil && !st.IsDir()) {
 			err = fmt.Errorf("Invalid checkpoint dir[%s]: %v", cpOldDir, err)
 			log.LogError(err)
+			log.LogCriticalf("DEBUG: Part(%v): %v", mp.config.PartitionId, err)
 			return err
 		}
 		if err == nil {
+			log.LogCriticalf("DEBUG: Part(%v) %v exist rename to %v", mp.config.PartitionId, cpOldDir, cpDir)
 			if e := os.Rename(cpOldDir, cpDir); e != nil {
 				err = fmt.Errorf("Unable to rename [%s] -> [%s]: %v", cpOldDir, cpDir, e)
 				log.LogError(err)
@@ -865,22 +870,27 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 	}
 
 	// clear 'checkpoint.old'
+	log.LogCriticalf("DEBUG: cleanup Part(%v) [%s]", mp.config.PartitionId, OldCheckpointDir)
 	if e := cleanupStaleDBData(conf.RootDir, OldCheckpointDir); e != nil && !os.IsNotExist(err) {
 		log.LogErrorf("Failed to cleanup partition[%v] [%s]: %v", mp.config.PartitionId, OldCheckpointDir, e)
+		log.LogCriticalf("DEBUG: Part(%v) Failed to cleanup [%s]: %v", mp.config.PartitionId, OldCheckpointDir, e)
 		return e
 	}
 
 	workDir := path.Join(conf.RootDir, metaDBDir)
 	if err == nil {
 		// keep the current checkpoint until new checkpoint is create
+		log.LogCriticalf("DEBUG: open DB %s to create checkpoint at %s", cpDir, workDir)
 		store, cfs, err := raftstore.OpenWithColumnFamilies(cpDir, cfNames, DBLRUCacheSize, DBWriteBufferSize)
 		if err != nil {
 			log.LogErrorf("Failed to create or open DB in [%s]: %v", cpDir, err)
+			log.LogCriticalf("DEBUG: Part(%v) Failed to create or open DB in [%s]: %v", mp.config.PartitionId, cpDir, err)
 			return err
 		}
 		cp, err := store.NewCheckpoint()
 		if err != nil {
 			log.LogErrorf("Failed to new checkpoint: %v", err)
+			log.LogCriticalf("DEBUG: Part(%v) Failed to new checkpoint: %v", mp.config.PartitionId, err)
 			for _, cf := range cfs {
 				cf.Destroy()
 			}
@@ -889,6 +899,7 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 		}
 		if err = cp.CreateCheckpoint(workDir, 0); err != nil {
 			log.LogError("Failed to rollback to checkpoint: %v", err)
+			log.LogCriticalf("DEBUG: Part(%v) Failed to rollback to checkpoint: %v", mp.config.PartitionId, err)
 			cp.Destroy()
 			for _, cf := range cfs {
 				cf.Destroy()
@@ -904,15 +915,18 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 		store.Close()
 	}
 
+	log.LogCriticalf("DEBUG: open DB at %s", workDir)
 	metaDB.db, cfs, err = raftstore.OpenWithColumnFamilies(
 		workDir, cfNames, DBLRUCacheSize, DBWriteBufferSize)
 	if err != nil {
 		if strings.Contains(err.Error(), "Column family not found") {
+			log.LogCriticalf("DEBUG: Part(%v) Failed to open DB with column families in [%s], create it alone: %v", mp.config.PartitionId, workDir, err)
 			// column family not exist, create them
 			metaDB.db, err = raftstore.NewRocksDBStore(workDir, DBLRUCacheSize, DBWriteBufferSize)
 			if err == nil {
 				cfs = make([]*gorocksdb.ColumnFamilyHandle, len(cfNames))
 				for i, n := range cfNames[1:] {
+					log.LogCriticalf("DEBUG: Part(%v) create column family [%s]", mp.config.PartitionId, n)
 					if cfs[i+1], err = metaDB.db.CreateColumnFamily(n); err != nil {
 						break
 					}
@@ -928,6 +942,7 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 				}
 			}
 			metaDB.db.Close()
+			log.LogCriticalf("DEBUG: Part(%v) Failed to create or open DB in [%s]: %v", mp.config.PartitionId, workDir, err)
 			return err
 		}
 	}
@@ -966,6 +981,7 @@ func (mp *metaPartition) releaseMetaDB() {
 func (mp *metaPartition) storeToDB(sm *storeMsg) (err error) {
 	var cp *gorocksdb.Checkpoint
 
+	log.LogCriticalf("DEBUG: Part(%v) start snapshot", mp.config.PartitionId)
 	// cleanup
 	newCPDir := path.Join(mp.config.RootDir, NewCheckpointDir)
 	if _, err = os.Stat(newCPDir); err == nil {
@@ -1040,6 +1056,7 @@ func (mp *metaPartition) storeToDB(sm *storeMsg) (err error) {
 	os.RemoveAll(path.Join(mp.config.RootDir, snapshotBackup))
 
 	// clear MetaDBNew
+	log.LogCriticalf("DEBUG: Part(%v) clear MetaDBNew", mp.config.PartitionId)
 	mp.metaDB.ClearStatus(MetaDBNew)
 
 	return nil
@@ -1066,6 +1083,7 @@ func (mp *metaPartition) RemoveExpiredCheckpoints() {
 					dir := path.Join(mp.config.RootDir, ent.Name())
 					os.RemoveAll(dir)
 					log.LogInfof("Remove [%s]", dir)
+					log.LogCriticalf("DEBUG: Part(%v) Remove [%s]", mp.config.RootDir, dir)
 					// FIXME: sleep a while?
 					time.Sleep(time.Second)
 				}
@@ -1086,6 +1104,7 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 	)
 
 	if mp.metaDB.TestStatus(MetaDBNew) {
+		log.LogCriticalf("DEBUG: part[%v] is a new db, wait snapshot", mp.config.PartitionId)
 		// this is a new DB, wait snapshot to save all nodes
 		return
 	}
@@ -1093,6 +1112,10 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 	now = time.Now()
 	nowUnix = now.Unix()
 	mp.inodeTree.Lock()
+	log.LogCriticalf("DEBUG: start reclaim part[%v] lru len[%v]", mp.config.PartitionId, mp.inodeTree.lru.Len())
+	defer func() {
+		log.LogCriticalf("DEBUG: end reclaim part[%v] lru len[%v] scanned[%v] reclaimed[%v]", mp.config.PartitionId, mp.inodeTree.lru.Len(), scanned, reclaimed)
+	}()
 	// FIXME: need a better loop to reclaim cold inodes
 	// FIXME: is list iterator safe?
 	// FIXME: what if the reclaimed inode is not the first one?
@@ -1105,9 +1128,12 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 		}
 
 		ino := item.Value.(*Inode)
+		log.LogCriticalf("DEBUG: part[%v] try to reclaim ino[%v]", mp.config.PartitionId, ino.Inode)
 		ino.Lock() // FIXME: should use trylock and skip busy ones
 		// FIXME: need fix overflow?
 		if now.Sub(ino.elapse) < ColdTimeMax {
+			log.LogCriticalf("DEBUG: part[%v] ino[%v] elapse[%s] now[%s] diff[%s]", mp.config.PartitionId, ino.Inode,
+				ino.elapse.Format("2006-01-02 15:04:05"), now.Format("2006-01-02 15:04:05"), now.Sub(ino.elapse))
 			// no inode is satisfied
 			ino.Unlock()
 			break
@@ -1116,6 +1142,7 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 		// FIXME: need fix overflow?
 		if nowUnix-ino.AccessTime < int64(AccessTimeMax) {
 			// skip inode that is accessed recently
+			log.LogCriticalf("DEBUG: part[%v] ino[%v] atime[%d] now[%d] diff[%d]", mp.config.PartitionId, ino.Inode, ino.AccessTime, nowUnix, nowUnix-ino.AccessTime)
 			ino.Unlock()
 			item = item.Next()
 			continue
@@ -1123,6 +1150,7 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 
 		if ino.wbStatus == WritebackNew {
 			// newly created inode is not ready yet
+			log.LogCriticalf("DEBUG: part[%v] ino[%v] is not ready", mp.config.PartitionId, ino.Inode)
 			ino.Unlock()
 			item = item.Next()
 			continue
@@ -1130,6 +1158,7 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 
 		if ino.NLink == 0 /*ino.Flag&DeleteMarkFlag == DeleteMarkFlag*/ {
 			// skip orphan inode
+			log.LogCriticalf("DEBUG: part[%v] ino[%v] NLink[%v] DeleteMarkFlag[%v], skip orphan", mp.config.PartitionId, ino.Inode, ino.NLink, ino.Flag&DeleteMarkFlag)
 			ino.Unlock()
 			item = item.Next()
 			continue
@@ -1145,6 +1174,7 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 		if item := mp.inodeTree.tree.Delete(ino); item != nil {
 			item.(BtreeItem).DeleteLRU(mp.inodeTree.lru)
 		}
+		log.LogCriticalf("DEBUG: Part(%v) reclaim remove ino(%v) from memory", mp.config.PartitionId, ino.Inode)
 		ino.Unlock()
 		mp.inodeTree.Unlock()
 		reclaimed++
@@ -1182,6 +1212,7 @@ func (mp *metaPartition) ReadInodeFromDB(ino uint64, ro bool) (btree.Item, error
 		return nil, err
 	}
 
+	log.LogCriticalf("DEBUG: [ReadInodeFromDB] Part(%v) ino(%v)", mp.config.PartitionId, ino)
 	key := []byte(fmt.Sprintf("%v", ino))
 	item, err := mp.metaDB.db.GetCF(cf, key)
 	if err != nil {

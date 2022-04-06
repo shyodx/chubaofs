@@ -601,6 +601,7 @@ func (i *Inode) DeleteLRU(head *list.List) {
 	i.Lock()
 	if i.wbStatus == WritebackNeed && i.NLink > 0 {
 		i.Unlock()
+		panic(fmt.Sprintf("Cannot delete dirty ino(%v) nlink(%v)", i.Inode, i.NLink))
 		return
 	}
 	if i.elem != nil {

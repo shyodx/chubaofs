@@ -42,6 +42,9 @@ func (mp *metaPartition) startSchedule(curIndex uint64) {
 		log.LogDebugf("[startSchedule] partitionId=%d: nowAppID"+
 			"=%d, applyID=%d", mp.config.PartitionId, curIndex,
 			msg.applyIndex)
+		log.LogCriticalf("DEBUG: [startSchedule] partitionId=%d: nowAppID"+
+			"=%d, applyID=%d", mp.config.PartitionId, curIndex,
+			msg.applyIndex)
 		if err := mp.storeToDB(msg); err == nil {
 			// truncate raft log
 			if mp.raftPartition != nil {

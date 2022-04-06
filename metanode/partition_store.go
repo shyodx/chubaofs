@@ -135,6 +135,8 @@ func (mp *metaPartition) loadMetadata() (err error) {
 
 	log.LogInfof("loadMetadata: load complete: partitionID(%v) volume(%v) range(%v,%v) cursor(%v)",
 		mp.config.PartitionId, mp.config.VolName, mp.config.Start, mp.config.End, mp.config.Cursor)
+	log.LogCriticalf("DEBUG: loadMetadata: load complete: partitionID(%v) volume(%v) range(%v,%v) cursor(%v)",
+		mp.config.PartitionId, mp.config.VolName, mp.config.Start, mp.config.End, mp.config.Cursor)
 	return
 }
 
@@ -145,12 +147,14 @@ func (mp *metaPartition) loadInode(rootDir string) (err error) {
 	if _, err = os.Stat(filename); err != nil {
 		if os.IsNotExist(err) {
 			dir := path.Join(rootDir, metaDBDir)
+			log.LogCriticalf("DEBUG: [loadInode] Part(%v) load from [%s]", mp.config.RootDir, dir)
 			if err = mp.loadInodeFromDB(dir); err != nil {
 				return
 			}
 		}
 		return
 	}
+	log.LogCriticalf("DEBUG: [loadInode] Part(%v) load from [%s]", mp.config.RootDir, filename)
 	fp, err := os.OpenFile(filename, os.O_RDONLY, 0644)
 	if err != nil {
 		err = errors.NewErrorf("[loadInode] OpenFile: %s", err.Error())
@@ -200,6 +204,9 @@ func (mp *metaPartition) loadInode(rootDir string) (err error) {
 
 	log.LogInfof("loadinode: load complete: partitonid(%v) volume(%v) numinodes(%v)",
 		mp.config.PartitionId, mp.config.VolName, numInodes)
+	log.LogCriticalf("DEBUG: loadinode: load complete: partitonid(%v) volume(%v) numinodes(%v)",
+		mp.config.PartitionId, mp.config.VolName, numInodes)
+
 	return
 }
 
@@ -211,12 +218,14 @@ func (mp *metaPartition) loadDentry(rootDir string) (err error) {
 	if _, err = os.Stat(filename); err != nil {
 		if os.IsNotExist(err) {
 			dir := path.Join(rootDir, metaDBDir)
+			log.LogCriticalf("DEBUG: [loadDentry] Part(%v) from [%v]", mp.config.RootDir, dir)
 			if err = mp.loadDentryFromDB(dir); err != nil {
 				return
 			}
 		}
 		return
 	}
+	log.LogCriticalf("DEBUG: [loadDentry] Part(%v) from [%v]", mp.config.RootDir, filename)
 	fp, err := os.OpenFile(filename, os.O_RDONLY, 0644)
 	if err != nil {
 		if err == os.ErrNotExist {
@@ -269,6 +278,8 @@ func (mp *metaPartition) loadDentry(rootDir string) (err error) {
 	}
 
 	log.LogInfof("loadDentry: load complete: partitonID(%v) volume(%v) numDentries(%v)",
+		mp.config.PartitionId, mp.config.VolName, numDentries)
+	log.LogCriticalf("DEBUG: loadDentry: load complete: partitonID(%v) volume(%v) numDentries(%v)",
 		mp.config.PartitionId, mp.config.VolName, numDentries)
 	return
 }
@@ -705,8 +716,13 @@ func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
 
 	// save all orphan inodes
 	orphanHandler := func(item *list.Element) error {
+		// FIXME: should use PutBatchCF
+		// For example, add two funcs: PrepareBatchCF and WriteBatch
+		// call PrepareBathCF to put ino into batch, and every N items,
+		// call WriteBatch to write the batch
 		ino := item.Value.(uint64)
 		key := []byte(fmt.Sprintf("%v", ino))
+		log.LogCriticalf("DEBUG: Part(%v) save ino %v to orphaninode cf", mp.config.PartitionId, ino)
 		if e := mp.metaDB.db.PutCF(orphanCF, key, nil, false); e != nil {
 			return e
 		}
@@ -725,6 +741,7 @@ func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
 		// inode is COW, so no need to lock it
 		inode := item.(*Inode)
 		if saveAll || inode.IsDirty() {
+			log.LogCriticalf("DEBUG: Part(%v) save ino %v to inode cf", mp.config.PartitionId, inode.Inode)
 			key := []byte(fmt.Sprintf("%v", inode.Inode))
 			if data, err = inode.Marshal(); err != nil {
 				return false
@@ -752,6 +769,8 @@ func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
 
 	log.LogInfof("storeInodeToDB: store complete: partitoinID(%v) volume(%v) numInodes(%v) dirytInodes(%v)",
 		mp.config.PartitionId, mp.config.VolName, sm.inodeTree.Len(), cnt)
+	log.LogCriticalf("DEBUG: storeInodeToDB: store complete: partitoinID(%v) volume(%v) numInodes(%v) dirytInodes(%v) saveAll(%v) st(%x)",
+		mp.config.PartitionId, mp.config.VolName, sm.inodeTree.Len(), cnt, saveAll, mp.metaDB.status)
 
 	return
 }
@@ -776,11 +795,13 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 	if orphanCF, found = mp.metaDB.cfs["orphaninode"]; !found {
 		err = fmt.Errorf("orphaninode column family not exist")
 		log.LogError(err)
+		log.LogCriticalf("DEBUG: [loadInodeFromDB] Part(%v): %v", mp.config.RootDir, err)
 		return
 	}
 	if inodeCF, found = mp.metaDB.cfs["inode"]; !found {
 		err = fmt.Errorf("inode column family not exist")
 		log.LogError(err)
+		log.LogCriticalf("DEBUG: [loadInodeFromDB] Part(%v): %v", mp.config.RootDir, err)
 		return
 	}
 	db := mp.metaDB.db
@@ -789,22 +810,26 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 	orphInoStr := make([]string, 0)
 	loadOphanFunc := func(k, v *gorocksdb.Slice) error {
 		inoStr := string(v.Data())
+		log.LogCriticalf("DEBUG: Part(%v) load ino(%v) from orphaninode cf", mp.config.PartitionId, inoStr)
 		orphInoStr = append(orphInoStr, inoStr)
 		return nil
 	}
 	if nr, err = db.LoadNCF(orphanCF, 0, loadOphanFunc, nil); err != nil {
+		log.LogCriticalf("DEBUG: [loadInodeFromDB] load orphan Part(%v): %v", mp.config.RootDir, err)
 		panic(err)
 	}
 
 	for _, inoStr := range orphInoStr {
 		data, err := db.GetCF(inodeCF, []byte(inoStr))
 		if err != nil {
+			log.LogCriticalf("DEBUG: Failed Part(%v) load orphan ino(%v) from inode cf: %v", mp.config.PartitionId, inoStr, err)
 			err = fmt.Errorf("Failed load Part(%v) orphan ino(%v) from orphaninode cf: %v",
 				mp.config.PartitionId, inoStr, err)
 			return err
 		}
 		inode := NewInode(0, 0)
 		if err = inode.Unmarshal(data.([]byte)); err != nil {
+			log.LogCriticalf("DEBUG: Failed Part(%v) unmarshal ino(%v): %v", mp.config.PartitionId, inoStr, err)
 			err = fmt.Errorf("Failed unmarshal Part(%v) ino(%v): %v",
 				mp.config.PartitionId, inoStr, err)
 			return err
@@ -816,13 +841,19 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 
 	log.LogInfof("loadInodeFromDB: load orphan complete: partitonid(%v) volume(%v) numinodes(%v)",
 		mp.config.PartitionId, mp.config.VolName, nr)
+	log.LogCriticalf("DEBUG: loadInodeFromDB: load orphan complete: partitonid(%v) volume(%v) numinodes(%v)",
+		mp.config.PartitionId, mp.config.VolName, nr)
 
 	// load all inodes
+	// FIXME: load the first inode only?
+	// FIXME: can we put inodes as LRU order in rocksdb, and load them as
+	// the order back to memory? If it could, we could load the first N inodes
 	loadInodeFunc := func(k, v *gorocksdb.Slice) error {
 		inode := NewInode(0, 0)
 		if e := inode.Unmarshal(v.Data()); e != nil {
 			return errors.NewErrorf("[loadInodeFromDB] Unmarshal: %v", e)
 		}
+		log.LogCriticalf("DEBUG: Part(%v) load ino(%v) from inode cf", mp.config.PartitionId, inode.Inode)
 		if inode.NLink == 0 {
 			// skip orphan inodes
 			return nil
@@ -833,19 +864,26 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 	}
 	skip := [][]byte{[]byte("0")}
 	if nr, err = db.LoadNCF(inodeCF, 0, loadInodeFunc, skip); err != nil {
+		log.LogCriticalf("DEBUG: [loadInodeFromDB] load inode Part(%v): %v", mp.config.RootDir, err)
 		panic(err)
 	}
 
 	// load InodeStat
+ 	// FIXME: get max ino correctly
+ 	// FIXME: use 0 as a specific value for inodes?
+ 	// FIXME: key should be string or raw array?
 	key := []byte(fmt.Sprintf("%v", 0))
 	if data, err = db.GetCF(inodeCF, key); err != nil {
 		log.LogErrorf("[loadInodeFromDB] load statistics info: %v", err)
+		log.LogCriticalf("DEBUG: [loadInodeFromDB] load statistics info Part(%v): %v", mp.config.RootDir, err)
 		return
 	}
 	is.Unmarshal(data.([]byte))
 
 	mp.config.Cursor = is.cursor
 	log.LogInfof("loadInodeFromDB: load complete: partitonid(%v) volume(%v) numinodes(%v) IS(%v)",
+		mp.config.PartitionId, mp.config.VolName, nr, is.String())
+	log.LogCriticalf("DEBUG: loadInodeFromDB: load complete: partitonid(%v) volume(%v) numinodes(%v) IS(%v)",
 		mp.config.PartitionId, mp.config.VolName, nr, is.String())
 
 	return
@@ -873,6 +911,7 @@ func (mp *metaPartition) storeDentryToDB(sm *storeMsg) (err error) {
 		// dentry is COW, so no need to lock it
 		dentry := item.(*Dentry)
 		if saveAll || dentry.IsDirty() {
+			log.LogCriticalf("DEBUG: Part(%v) save dentry [%s] to dentry cf", mp.config.PartitionId, dentry.Name)
 			key := []byte(fmt.Sprintf("%d_%s", dentry.ParentId, dentry.Name))
 			if data, err = dentry.Marshal(); err != nil {
 				return false
@@ -889,6 +928,8 @@ func (mp *metaPartition) storeDentryToDB(sm *storeMsg) (err error) {
 
 	log.LogInfof("storeDentryToDB: store complete: partitoinID(%v) volume(%v) numDentries(%v) dirtyDentries(%v)",
 		mp.config.PartitionId, mp.config.VolName, sm.dentryTree.Len(), cnt)
+	log.LogCriticalf("DEBUG: storeDentryToDB: store complete: partitoinID(%v) volume(%v) numDentries(%v) dirtyDentries(%v) saveAll(%v)",
+		mp.config.PartitionId, mp.config.VolName, sm.dentryTree.Len(), cnt, saveAll)
 
 	return
 }
@@ -910,16 +951,21 @@ func (mp *metaPartition) loadDentryFromDB(dir string) (err error) {
 	if cf, found = mp.metaDB.cfs["dentry"]; !found {
 		err = fmt.Errorf("dentry column family not exist")
 		log.LogError(err)
+		log.LogCriticalf("DEBUG: Part(%v): %v", mp.config.RootDir, err)
 		return
 	}
 
 	db := mp.metaDB.db
 
+	// FIXME: load nothing?
+	// FIXME: or load dentries accroding to inode LRU?
 	loadDentryFunc := func(k, v *gorocksdb.Slice) error {
 		dentry := &Dentry{}
 		if e := dentry.Unmarshal(v.Data()); e != nil {
 			return errors.NewErrorf("[loadDentryFromDB] Unmarshal: %v", e)
 		}
+
+		log.LogCriticalf("DEBUG: [loadDentryFromDB] Part(%v) load dentry(%v)", mp.config.PartitionId, dentry.Name)
 
 		if status := mp.fsmCreateDentry(dentry, true); status != proto.OpOk {
 			return errors.NewErrorf("[loadDentryFromDB] createDentry dentry: %v, resp code: %d", dentry, status)
@@ -927,10 +973,13 @@ func (mp *metaPartition) loadDentryFromDB(dir string) (err error) {
 		return nil
 	}
 	if nr, err = db.LoadNCF(cf, 0, loadDentryFunc, nil); err != nil {
+		log.LogCriticalf("DEBUG: [loadDentryFromDB] Part(%v) load: %v", mp.config.RootDir, err)
 		panic(err)
 	}
 
 	log.LogInfof("loadDentryFromDB: load complete: partitonID(%v) volume(%v) numDentries(%v)",
+		mp.config.PartitionId, mp.config.VolName, nr)
+	log.LogCriticalf("DEBUG: loadDentryFromDB: load complete: partitonID(%v) volume(%v) numDentries(%v)",
 		mp.config.PartitionId, mp.config.VolName, nr)
 
 	return
