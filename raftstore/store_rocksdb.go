@@ -22,6 +22,7 @@ import (
 	"os"
 
 	"github.com/cubefs/cubefs/util/errors"
+	"github.com/cubefs/cubefs/util/log"
 	"github.com/tecbot/gorocksdb"
 )
 
@@ -104,6 +105,17 @@ func OpenWithColumnFamilies(
 func (rs *RocksDBStore) Close() {
 	// FIXME: need flush?
 	rs.db.Close()
+}
+
+func (rs *RocksDBStore) Flush() error {
+	opts := gorocksdb.NewDefaultFlushOptions()
+	opts.SetWait(true)
+	err := rs.db.Flush(opts)
+	opts.Destroy()
+	if err != nil {
+		log.LogErrorf("DEBUG: failed to flush rocksdb: %v", err)
+	}
+	return err
 }
 
 // Del deletes a key-value pair.
