@@ -357,6 +357,27 @@ func (rs *RocksDBStore) PutBatchCF(cf *gorocksdb.ColumnFamilyHandle, kvBatch map
 	return rs.db.Write(wo, wb)
 }
 
+func (rs *RocksDBStore) DelCF(cf *gorocksdb.ColumnFamilyHandle, key []byte, isSync bool) (interface{}, error) {
+	ro := gorocksdb.NewDefaultReadOptions()
+	wo := gorocksdb.NewDefaultWriteOptions()
+	wo.SetSync(isSync)
+	defer func() {
+		ro.Destroy()
+		wo.Destroy()
+	}()
+
+	slice, err := rs.db.Get(ro, key)
+	if err != nil {
+		return nil, err
+	}
+	data := make([]byte, slice.Size())
+	copy(data, slice.Data())
+	slice.Free()
+
+	err = rs.db.DeleteCF(wo, cf, key)
+	return data, err
+}
+
 func (rs *RocksDBStore) NewCheckpoint() (*gorocksdb.Checkpoint, error) {
 	return rs.db.NewCheckpoint()
 }
