@@ -14,6 +14,13 @@
 
 package metanode
 
+import (
+	"fmt"
+
+	"github.com/cubefs/cubefs/util/errors"
+	"github.com/cubefs/cubefs/util/log"
+)
+
 type ExtendOpResult struct {
 	Status uint8
 	Extend *Extend
@@ -43,4 +50,18 @@ func (mp *metaPartition) fsmRemoveXAttr(extend *Extend) (err error) {
 		return true
 	})
 	return
+}
+
+func (mp *metaPartition) deleteExtendsFromDB(e *Extend) {
+	cf, found := mp.metaDB.cfs["extend"]
+	if !found {
+		err := errors.New("extend column family not exist")
+		panic(err)
+	}
+
+	key := []byte(fmt.Sprintf("%d", e.inode))
+	if _, err := mp.metaDB.db.DelCF(cf, key, false); err != nil {
+		log.LogErrorf("Failed to delete extend %v from DB: %v", e.inode, err)
+		panic(err)
+	}
 }

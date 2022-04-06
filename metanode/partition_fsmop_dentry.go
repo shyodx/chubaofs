@@ -15,10 +15,13 @@
 package metanode
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/util/btree"
+	"github.com/cubefs/cubefs/util/errors"
+	"github.com/cubefs/cubefs/util/log"
 )
 
 type DentryResponse struct {
@@ -93,6 +96,20 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 	return dentry, status
 }
 
+func (mp *metaPartition) deleteDentryFromDB(dentry *Dentry) {
+	cf, found := mp.metaDB.cfs["dentry"]
+	if !found {
+		err := errors.New("dentry column family not exist")
+		panic(err)
+	}
+
+	key := []byte(fmt.Sprintf("%d_%s", dentry.ParentId, dentry.Name))
+	if _, err := mp.metaDB.db.DelCF(cf, key, false); err != nil {
+		log.LogErrorf("Failed to delete dentry %v from DB: %v", dentry.Name, err)
+		panic(err)
+	}
+}
+
 // Delete dentry from the dentry tree.
 func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
 	resp *DentryResponse) {
@@ -109,9 +126,11 @@ func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
 			if d.(*Dentry).Inode != dentry.Inode {
 				return nil
 			}
+			mp.deleteDentryFromDB(dentry)
 			return mp.dentryTree.tree.Delete(dentry)
 		})
 	} else {
+		mp.deleteDentryFromDB(dentry)
 		item = mp.dentryTree.Delete(dentry)
 	}
 

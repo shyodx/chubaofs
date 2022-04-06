@@ -23,6 +23,7 @@ import (
 
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/util/btree"
+	"github.com/cubefs/cubefs/util/errors"
 	"github.com/cubefs/cubefs/util/log"
 )
 
@@ -121,7 +122,7 @@ func (mp *metaPartition) Ascend(f func(i btree.Item) bool) {
 
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
-	var err error
+	var err  error
 
 	resp = NewInodeResponse()
 	resp.Status = proto.OpOk
@@ -133,6 +134,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 			return
 		}
 	}
+
 	inode := item.(*Inode)
 	if inode.ShouldDelete() {
 		resp.Status = proto.OpNotExistErr
@@ -150,6 +152,19 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 
 	//Fix#760: when nlink == 0, push into freeList and delay delete inode after 7 days
 	if inode.IsTempFile() {
+		if !proto.IsDir(inode.Type) {
+			cf, found := mp.metaDB.cfs["orphaninode"]
+			if !found {
+				err = errors.New("orphaninode column family not exist")
+				panic(err)
+			}
+			key := []byte(fmt.Sprintf("%v", ino.Inode))
+			if err = mp.metaDB.db.PutCF(cf, key, nil, false); err != nil {
+				log.LogErrorf("Failed to delete ino %v from DB: %v", ino.Inode, err)
+				panic(err)
+			}
+		}
+
 		inode.DoWriteFunc(func() {
 			if inode.NLink == 0 {
 				inode.AccessTime = time.Now().Unix()
@@ -223,7 +238,10 @@ func (mp *metaPartition) internalDeleteBatch(val []byte) error {
 func (mp *metaPartition) internalDeleteInode(ino *Inode) {
 	mp.inodeTree.Delete(ino)
 	mp.freeList.Remove(ino.Inode)
-	mp.extendTree.Delete(&Extend{inode: ino.Inode}) // Also delete extend attribute.
+	mp.deleteInodeFromDB(ino)
+	e := &Extend{inode: ino.Inode}
+	mp.extendTree.Delete(e) // Also delete extend attribute.
+	mp.deleteExtendsFromDB(e)
 	return
 }
 
@@ -389,4 +407,31 @@ func (mp *metaPartition) fsmSetAttr(req *SetattrRequest) (err error) {
 	ino.SetAttr(req)
 	ino.MarkDirty()
 	return
+}
+
+func (mp *metaPartition) deleteInodeFromDB(inode *Inode) {
+	cf, found := mp.metaDB.cfs["inode"]
+	if !found {
+		err := errors.New("inode column family not exist")
+		panic(err)
+	}
+	key := []byte(fmt.Sprintf("%d", inode.Inode))
+	if _, err := mp.metaDB.db.DelCF(cf, key, false); err != nil {
+		log.LogErrorf("Failed to delete ino %v from DB: %v", inode.Inode, err)
+		panic(err)
+	}
+
+	if proto.IsDir(inode.Type) {
+		return
+	}
+
+	cf, found = mp.metaDB.cfs["orphaninode"]
+	if !found {
+		err := errors.New("orphaninode column family not exist")
+		panic(err)
+	}
+	if _, err := mp.metaDB.db.DelCF(cf, key, false); err != nil {
+		log.LogErrorf("Failed to delete ino %v from DB: %v", inode.Inode, err)
+		panic(err)
+	}
 }
