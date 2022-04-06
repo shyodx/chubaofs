@@ -16,6 +16,7 @@ package metanode
 
 import (
 	"bytes"
+	"container/list"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -70,6 +71,8 @@ type Inode struct {
 
 	ver      uint64 // used only for Btree
 	wbStatus uint32 // need write back to rocksdb
+	elapse   time.Time
+	elem     *list.Element // insert to inodeTree.lru
 }
 
 type InodeBatch []*Inode
@@ -113,6 +116,7 @@ func NewInode(ino uint64, t uint32) *Inode {
 		NLink:      1,
 		Extents:    NewSortedExtents(),
 		wbStatus:   WritebackFree,
+		elapse:     time.Now(),
 	}
 	if proto.IsDir(t) {
 		i.NLink = 2
@@ -147,6 +151,8 @@ func (i *Inode) Copy() btree.Item {
 	newIno.Reserved = i.Reserved
 	newIno.Extents = i.Extents.Clone()
 	newIno.wbStatus = i.wbStatus
+	newIno.elapse = time.Now()
+	// XXX: elem is not copied
 	i.RUnlock()
 	return newIno
 }
@@ -573,5 +579,33 @@ func (i *Inode) MarkDirty() {
 func (i *Inode) MarkReady() {
 	i.Lock()
 	i.wbStatus = WritebackFree
+	i.Unlock()
+}
+
+func (i *Inode) UpdateLRU(head *list.List) {
+	i.Lock()
+	// do not insert root to LRU list
+	if i.Inode == proto.RootIno {
+		i.Unlock()
+		return
+	}
+	i.elapse = time.Now()
+	if i.elem != nil {
+		head.Remove(i.elem)
+	}
+	i.elem = head.PushBack(i)
+	i.Unlock()
+}
+
+func (i *Inode) DeleteLRU(head *list.List) {
+	i.Lock()
+	if i.wbStatus == WritebackNeed && i.NLink > 0 {
+		i.Unlock()
+		return
+	}
+	if i.elem != nil {
+		head.Remove(i.elem)
+		i.elem = nil
+	}
 	i.Unlock()
 }

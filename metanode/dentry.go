@@ -16,6 +16,7 @@ package metanode
 
 import (
 	"bytes"
+	"container/list"
 	"encoding/binary"
 
 	"github.com/cubefs/cubefs/util/btree"
@@ -223,4 +224,10 @@ func (d *Dentry) UnmarshalValue(val []byte) (err error) {
 func (d *Dentry) IsDirty() bool {
 	// TODO
 	return true
+}
+
+func (d *Dentry) UpdateLRU(head *list.List) {
+}
+
+func (d *Dentry) DeleteLRU(head *list.List) {
 }

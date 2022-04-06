@@ -16,6 +16,7 @@ package metanode
 
 import (
 	"bytes"
+	"container/list"
 	"encoding/binary"
 	"sync"
 
@@ -181,4 +182,10 @@ func (e *Extend) Bytes() ([]byte, error) {
 func (e *Extend) IsDirty() bool {
 	// TODO
 	return true
+}
+
+func (e *Extend) UpdateLRU(head *list.List) {
+}
+
+func (e *Extend) DeleteLRU(head *list.List) {
 }

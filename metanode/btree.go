@@ -15,6 +15,7 @@
 package metanode
 
 import (
+	"container/list"
 	"sync"
 
 	"github.com/cubefs/cubefs/util/btree"
@@ -28,12 +29,15 @@ type BtreeItem interface {
 	Copy() btree.Item
 	GetVersion() uint64
 	SetVersion(ver uint64)
+	UpdateLRU(head *list.List)
+	DeleteLRU(head *list.List)
 }
 
 // Btree is the wrapper of Google's btree.
 type Btree struct {
 	sync.RWMutex
 	tree *btree.BTree
+	lru  *list.List
 
 	// ver is monotonic and used for clone. Each clone will increase ver.
 	// The implementation of BtreeItem also has a ver, if it is different
@@ -46,6 +50,7 @@ type Btree struct {
 func NewBtree() *Btree {
 	return &Btree{
 		tree: btree.New(defaultBTreeDegree),
+		lru:  list.New(),
 		ver:  1,
 	}
 }
@@ -54,6 +59,9 @@ func NewBtree() *Btree {
 func (b *Btree) GetForRead(key btree.Item) (item btree.Item) {
 	b.RLock()
 	item = b.tree.Get(key)
+	if !b.rdonly && item != nil {
+		item.(BtreeItem).UpdateLRU(b.lru)
+	}
 	b.RUnlock()
 	return
 }
@@ -76,6 +84,7 @@ func (b *Btree) GetForWrite(key btree.Item) (item btree.Item) {
 			b.tree.ReplaceOrInsert(newItem)
 			item = newItem
 		}
+		item.(BtreeItem).UpdateLRU(b.lru)
 	}
 	b.Unlock()
 	return
@@ -94,6 +103,9 @@ func (b *Btree) CopyFind(key btree.Item, fn func(i btree.Item)) {
 			b.tree.ReplaceOrInsert(newItem)
 			item = newItem
 		}
+	}
+	if !b.rdonly && item != nil {
+		item.(BtreeItem).UpdateLRU(b.lru)
 	}
 	fn(item)
 	b.Unlock()
@@ -114,6 +126,9 @@ func (b *Btree) Delete(key btree.Item) (item btree.Item) {
 		panic("Write a read only tree")
 	}
 	item = b.tree.Delete(key)
+	if item != nil {
+		item.(BtreeItem).DeleteLRU(b.lru)
+	}
 	b.Unlock()
 	return
 }
@@ -137,6 +152,7 @@ func (b *Btree) ReplaceOrInsert(key btree.Item, replace bool) (item btree.Item, 
 	if replace {
 		key.(BtreeItem).SetVersion(b.ver)
 		item = b.tree.ReplaceOrInsert(key)
+		key.(BtreeItem).UpdateLRU(b.lru)
 		b.Unlock()
 		ok = true
 		return
@@ -146,6 +162,7 @@ func (b *Btree) ReplaceOrInsert(key btree.Item, replace bool) (item btree.Item, 
 	if item == nil {
 		key.(BtreeItem).SetVersion(b.ver)
 		item = b.tree.ReplaceOrInsert(key)
+		key.(BtreeItem).UpdateLRU(b.lru)
 		b.Unlock()
 		ok = true
 		return
@@ -188,6 +205,8 @@ func (b *Btree) CloneTree() *Btree {
 	oldBtree := NewBtree()
 	oldBtree.ver = oldVer
 	oldBtree.tree = old
+	// two trees share the same LRU, but oldBtree does not modify it
+	oldBtree.lru = b.lru
 	oldBtree.rdonly = true
 	return oldBtree
 }

@@ -17,6 +17,7 @@ package metanode
 import (
 	"bytes"
 	"encoding/json"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -210,6 +211,12 @@ const (
 	DBLRUCacheSize    = 1000
 	DBWriteBufferSize = 4 * util.MB
 	DBLogSizeForFlush = 128 * util.MB
+	ColdTimeMax       = time.Hour
+	AccessTimeMax     = 24 * 3600 // unit: second
+	ReclaimInterval   = time.Minute
+	ReclaimStartCnt   = 100
+	ReclaimLimit      = 10
+	ReclaimScanLimit  = 100
 )
 
 type MetaDB struct {
@@ -931,6 +938,7 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 
 	mp.metaDB = metaDB
 
+	go mp.ReclaimColdInodes()
 	go mp.RemoveExpiredCheckpoints()
 
 	return nil
@@ -1064,6 +1072,103 @@ func (mp *metaPartition) RemoveExpiredCheckpoints() {
 			}
 			// FIXME: use a new channel to receive expired directory directly?
 		case <-mp.metaDB.stopC:
+			return
+		}
+	}
+}
+
+func (mp *metaPartition) removeOldestInodeLRU() {
+	var (
+		reclaimed int
+		scanned   int
+		now       time.Time
+		nowUnix   int64
+	)
+
+	if mp.metaDB.TestStatus(MetaDBNew) {
+		// this is a new DB, wait snapshot to save all nodes
+		return
+	}
+
+	now = time.Now()
+	nowUnix = now.Unix()
+	mp.inodeTree.Lock()
+	// FIXME: need a better loop to reclaim cold inodes
+	// FIXME: is list iterator safe?
+	// FIXME: what if the reclaimed inode is not the first one?
+	item := mp.inodeTree.lru.Front()
+	for mp.inodeTree.lru.Len() > ReclaimStartCnt && reclaimed < ReclaimLimit && scanned < ReclaimScanLimit {
+		scanned++
+
+		if item == nil {
+			break
+		}
+
+		ino := item.Value.(*Inode)
+		ino.Lock() // FIXME: should use trylock and skip busy ones
+		// FIXME: need fix overflow?
+		if now.Sub(ino.elapse) < ColdTimeMax {
+			// no inode is satisfied
+			ino.Unlock()
+			break
+		}
+
+		// FIXME: need fix overflow?
+		if nowUnix-ino.AccessTime < int64(AccessTimeMax) {
+			// skip inode that is accessed recently
+			ino.Unlock()
+			item = item.Next()
+			continue
+		}
+
+		if ino.wbStatus == WritebackNew {
+			// newly created inode is not ready yet
+			ino.Unlock()
+			item = item.Next()
+			continue
+		}
+
+		if ino.NLink == 0 /*ino.Flag&DeleteMarkFlag == DeleteMarkFlag*/ {
+			// skip orphan inode
+			ino.Unlock()
+			item = item.Next()
+			continue
+		}
+
+		if ino.wbStatus != WritebackFree {
+			// wait storeToDB to write all diry inodes back
+			ino.Unlock()
+			item = item.Next()
+			continue
+		}
+		// found the inode
+		if item := mp.inodeTree.tree.Delete(ino); item != nil {
+			item.(BtreeItem).DeleteLRU(mp.inodeTree.lru)
+		}
+		ino.Unlock()
+		mp.inodeTree.Unlock()
+		reclaimed++
+
+		runtime.Gosched()
+		mp.inodeTree.Lock()
+		item = mp.inodeTree.lru.Front()
+	}
+	mp.inodeTree.Unlock()
+}
+
+func (mp *metaPartition) ReclaimColdInodes() {
+	ticker := time.NewTicker(ReclaimInterval)
+
+	for {
+		select {
+		case <-ticker.C:
+			if !mp.metaDB.TestStatus(MetaDBReady) {
+				continue
+			}
+			// do reclaim
+			mp.removeOldestInodeLRU()
+		case <-mp.metaDB.stopC:
+			ticker.Stop()
 			return
 		}
 	}

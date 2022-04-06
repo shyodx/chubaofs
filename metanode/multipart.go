@@ -16,6 +16,7 @@ package metanode
 
 import (
 	"bytes"
+	"container/list"
 	"encoding/binary"
 	"sort"
 	"sync"
@@ -462,4 +463,10 @@ func MultipartFromBytes(raw []byte) *Multipart {
 func (m *Multipart) IsDirty() bool {
 	// TODO
 	return true
+}
+
+func (m *Multipart) UpdateLRU(head *list.List) {
+}
+
+func (m *Multipart) DeleteLRU(head *list.List) {
 }
