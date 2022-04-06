@@ -217,6 +217,8 @@ type MetaDB struct {
 	db     *raftstore.RocksDBStore
 	cfs    map[string]*gorocksdb.ColumnFamilyHandle
 	status uint32 // atomic value
+
+	stopC chan struct{}
 }
 
 // metaPartition manages the range of the inode IDs.
@@ -813,6 +815,7 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 	metaDB := &MetaDB{
 		cfs:    make(map[string]*gorocksdb.ColumnFamilyHandle),
 		status: MetaDBInit,
+		stopC:  make(chan struct{}),
 	}
 
 	// cleanup 'metaDB' & 'checkpoint.new'
@@ -925,6 +928,9 @@ func (mp *metaPartition) newMetaDB(conf *MetaPartitionConfig) (err error) {
 	}
 
 	mp.metaDB = metaDB
+
+	go mp.RemoveExpiredCheckpoints()
+
 	return nil
 }
 
@@ -935,6 +941,7 @@ func (mp *metaPartition) releaseMetaDB() {
 
 	mp.metaDB.ClearStatus(MetaDBReady)
 	mp.metaDB.SetStatus(MetaDBClose)
+	close(mp.metaDB.stopC)
 	for n, cf := range mp.metaDB.cfs {
 		delete(mp.metaDB.cfs, n)
 		cf.Destroy()
@@ -1012,4 +1019,36 @@ func (mp *metaPartition) storeToDB(sm *storeMsg) (err error) {
 	mp.metaDB.ClearStatus(MetaDBNew)
 
 	return nil
+}
+
+func (mp *metaPartition) RemoveExpiredCheckpoints() {
+	ticker := time.NewTicker(time.Minute)
+	for {
+		select {
+		case <-ticker.C:
+			if !mp.metaDB.TestStatus(MetaDBReady) {
+				continue
+			}
+			dirEnts, err := os.ReadDir(mp.config.RootDir)
+			if err != nil {
+				log.LogErrorf("Failed to readdir of [%s]: %v", mp.config.RootDir, err)
+				continue
+			}
+			for _, ent := range dirEnts {
+				if !ent.IsDir() {
+					continue
+				}
+				if strings.HasPrefix(ent.Name(), CheckpointDirExpPrefix) {
+					dir := path.Join(mp.config.RootDir, ent.Name())
+					os.RemoveAll(dir)
+					log.LogInfof("Remove [%s]", dir)
+					// FIXME: sleep a while?
+					time.Sleep(time.Second)
+				}
+			}
+			// FIXME: use a new channel to receive expired directory directly?
+		case <-mp.metaDB.stopC:
+			return
+		}
+	}
 }
