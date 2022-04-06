@@ -143,7 +143,12 @@ func (mp *metaPartition) loadInode(rootDir string) (err error) {
 
 	filename := path.Join(rootDir, snapshotDir, inodeFile)
 	if _, err = os.Stat(filename); err != nil {
-		err = nil
+		if os.IsNotExist(err) {
+			dir := path.Join(rootDir, metaDBDir)
+			if err = mp.loadInodeFromDB(dir); err != nil {
+				return
+			}
+		}
 		return
 	}
 	fp, err := os.OpenFile(filename, os.O_RDONLY, 0644)
@@ -204,7 +209,12 @@ func (mp *metaPartition) loadDentry(rootDir string) (err error) {
 
 	filename := path.Join(rootDir, snapshotDir, dentryFile)
 	if _, err = os.Stat(filename); err != nil {
-		err = nil
+		if os.IsNotExist(err) {
+			dir := path.Join(rootDir, metaDBDir)
+			if err = mp.loadDentryFromDB(dir); err != nil {
+				return
+			}
+		}
 		return
 	}
 	fp, err := os.OpenFile(filename, os.O_RDONLY, 0644)
@@ -267,6 +277,12 @@ func (mp *metaPartition) loadExtend(rootDir string) error {
 	var err error
 	filename := path.Join(rootDir, snapshotDir, extendFile)
 	if _, err = os.Stat(filename); err != nil {
+		if os.IsNotExist(err) {
+			dir := path.Join(rootDir, metaDBDir)
+			if err = mp.loadExtendFromDB(dir); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	fp, err := os.OpenFile(filename, os.O_RDONLY, 0644)
@@ -311,6 +327,12 @@ func (mp *metaPartition) loadMultipart(rootDir string) error {
 	var err error
 	filename := path.Join(rootDir, snapshotDir, multipartFile)
 	if _, err = os.Stat(filename); err != nil {
+		if os.IsNotExist(err) {
+			dir := path.Join(rootDir, metaDBDir)
+			if err = mp.loadMultipartFromDB(dir); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	fp, err := os.OpenFile(filename, os.O_RDONLY, 0644)
@@ -351,8 +373,13 @@ func (mp *metaPartition) loadMultipart(rootDir string) error {
 func (mp *metaPartition) loadApplyID(rootDir string) (err error) {
 	filename := path.Join(rootDir, snapshotDir, applyIDFile)
 	if _, err = os.Stat(filename); err != nil {
-		err = nil
-		return
+		if os.IsNotExist(err) {
+			filename = path.Join(rootDir, metaDBDir, applyIDFile)
+			if _, err = os.Stat(filename); err != nil {
+				err = nil
+				return
+			}
+		}
 	}
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
