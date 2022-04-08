@@ -319,6 +319,14 @@ build_fdstore() {
     popd >/dev/null
 }
 
+build_mytest() {
+    pre_build_server
+    pushd $SrcPath >/dev/null
+    echo -n "build mytest "
+    go build $MODFLAGS -ldflags "${LDFlags}" -o ${BuildBinPath}/mytest ${SrcPath}/mytest/test/*.go  && echo "success" || echo "failed"
+    popd >/dev/null
+}
+
 clean() {
     $RM -rf ${BuildBinPath}
 }
@@ -364,6 +372,9 @@ case "$cmd" in
         ;;
     "fdstore")
         build_fdstore
+        ;;
+    "mytest")
+        build_mytest
         ;;
     "clean")
         clean

@@ -10,6 +10,7 @@ BIN_CLI := $(BIN_PATH)/cfs-cli
 BIN_FSCK := $(BIN_PATH)/cfs-fsck
 BIN_LIBSDK := $(BIN_PATH)/libsdk
 BIN_FDSTORE := $(BIN_PATH)/fdstore
+BIN_MYTEST := $(BIN_PATH)/mytest/test
 
 COMMON_SRC := build/build.sh Makefile
 COMMON_SRC += $(wildcard storage/*.go util/*/*.go util/*.go repl/*.go raftstore/*.go proto/*.go)
@@ -21,6 +22,7 @@ CLI_SRC := $(wildcard cli/*.go)
 FSCK_SRC := $(wildcard fsck/*.go fsck/cmd/*.go)
 LIBSDK_SRC := $(wildcard libsdk/*.go)
 FDSTORE_SRC := $(wildcard fdstore/*.go)
+MYTEST_SRC := $(wildcard mytest/rocksdb-test/*.go)
 
 RM := $(shell [ -x /bin/rm ] && echo "/bin/rm" || echo "/usr/bin/rm" )
 
@@ -48,6 +50,8 @@ libsdk: $(BIN_LIBSDK)
 
 fdstore: $(BIN_FDSTORE)
 
+mytest: $(BIN_MYTEST)
+
 $(BIN_SERVER): $(COMMON_SRC) $(SERVER_SRC)
 	@build/build.sh server
 
@@ -71,6 +75,9 @@ $(BIN_LIBSDK): $(COMMON_SRC) $(LIBSDK_SRC)
 
 $(BIN_FDSTORE): $(FDSTORE_SRC)
 	@build/build.sh fdstore
+
+$(BIN_MYTEST): $(MYTEST_SRC)
+	@build/build.sh mytest
 
 phony += clean
 clean:
