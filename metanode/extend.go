@@ -189,3 +189,9 @@ func (e *Extend) UpdateLRU(head *list.List) {
 
 func (e *Extend) DeleteLRU(head *list.List) {
 }
+
+func (d *Extend) IncRef() {
+}
+
+func (d *Extend) DecRef() {
+}

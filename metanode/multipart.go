@@ -470,3 +470,9 @@ func (m *Multipart) UpdateLRU(head *list.List) {
 
 func (m *Multipart) DeleteLRU(head *list.List) {
 }
+
+func (d *Multipart) IncRef() {
+}
+
+func (d *Multipart) DecRef() {
+}

@@ -150,8 +150,10 @@ func (mp *metaPartition) deleteWorker() {
 				if inode.ShouldDelayDelete() {
 					log.LogDebugf("[metaPartition] deleteWorker delay to remove inode: %v as NLink is 0", inode)
 					delayDeleteInos = append(delayDeleteInos, ino)
+					mp.inodeTree.Put(inode)
 					continue
 				}
+				mp.inodeTree.Put(inode)
 			}
 
 			buffSlice = append(buffSlice, ino)
@@ -271,6 +273,9 @@ func (mp *metaPartition) deleteMarkedInodes(inoSlice []uint64) {
 	log.LogInfof("metaPartition(%v) deleteInodeCnt(%v) inodeCnt(%v)", mp.config.PartitionId, len(shouldCommit), mp.inodeTree.Len())
 	for _, inode := range shouldRePushToFreeList {
 		mp.freeList.Push(inode.Inode)
+	}
+	for _, inode := range allInodes {
+		mp.inodeTree.Put(inode)
 	}
 
 	// try again.

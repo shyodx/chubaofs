@@ -231,3 +231,9 @@ func (d *Dentry) UpdateLRU(head *list.List) {
 
 func (d *Dentry) DeleteLRU(head *list.List) {
 }
+
+func (d *Dentry) IncRef() {
+}
+
+func (d *Dentry) DecRef() {
+}

@@ -31,6 +31,8 @@ type BtreeItem interface {
 	SetVersion(ver uint64)
 	UpdateLRU(head *list.List)
 	DeleteLRU(head *list.List)
+	IncRef()
+	DecRef()
 }
 
 // Btree is the wrapper of Google's btree.
@@ -59,8 +61,11 @@ func NewBtree() *Btree {
 func (b *Btree) GetForRead(key btree.Item) (item btree.Item) {
 	b.RLock()
 	item = b.tree.Get(key)
-	if !b.rdonly && item != nil {
-		item.(BtreeItem).UpdateLRU(b.lru)
+	if item != nil {
+		if !b.rdonly {
+			item.(BtreeItem).UpdateLRU(b.lru)
+		}
+		item.(BtreeItem).IncRef()
 	}
 	b.RUnlock()
 	return
@@ -85,11 +90,14 @@ func (b *Btree) GetForWrite(key btree.Item) (item btree.Item) {
 			item = newItem
 		}
 		item.(BtreeItem).UpdateLRU(b.lru)
+		item.(BtreeItem).IncRef()
 	}
 	b.Unlock()
 	return
 }
 
+func (b *Btree) Put(item btree.Item) {
+	item.(BtreeItem).DecRef()
 }
 
 // Has checks if the key exists in the btree.

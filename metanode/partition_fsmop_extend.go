@@ -33,6 +33,7 @@ func (mp *metaPartition) fsmSetXAttr(extend *Extend) (err error) {
 		e = NewExtend(extend.inode)
 		mp.extendTree.ReplaceOrInsert(e, true)
 	} else {
+		defer mp.extendTree.Put(treeItem)
 		e = treeItem.(*Extend)
 	}
 	e.Merge(extend, true)
@@ -44,6 +45,7 @@ func (mp *metaPartition) fsmRemoveXAttr(extend *Extend) (err error) {
 	if treeItem == nil {
 		return
 	}
+	defer mp.extendTree.Put(treeItem)
 	e := treeItem.(*Extend)
 	extend.Range(func(key, value []byte) bool {
 		e.Remove(key)

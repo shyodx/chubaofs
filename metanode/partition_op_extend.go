@@ -32,6 +32,7 @@ func (mp *metaPartition) UpdateSummaryInfo(req *proto.UpdateSummaryInfoRequest, 
 	defer mp.summaryLock.Unlock()
 	treeItem := mp.extendTree.GetForRead(NewExtend(req.Inode))
 	if treeItem != nil {
+		defer mp.extendTree.Put(treeItem)
 		extend := treeItem.(*Extend)
 		if value, exist := extend.Get([]byte(req.Key)); exist {
 			oldValueList := strings.Split(string(value), ",")
@@ -113,6 +114,7 @@ func (mp *metaPartition) GetXAttr(req *proto.GetXAttrRequest, p *Packet) (err er
 		if value, exist := extend.Get([]byte(req.Key)); exist {
 			response.Value = string(value)
 		}
+		mp.extendTree.Put(treeItem)
 	}
 	var encoded []byte
 	encoded, err = json.Marshal(response)
@@ -145,6 +147,7 @@ func (mp *metaPartition) BatchGetXAttr(req *proto.BatchGetXAttrRequest, p *Packe
 			}
 			response.XAttrs = append(response.XAttrs, info)
 		}
+		mp.extendTree.Put(treeItem)
 	}
 	var encoded []byte
 	if encoded, err = json.Marshal(response); err != nil {
@@ -180,6 +183,7 @@ func (mp *metaPartition) ListXAttr(req *proto.ListXAttrRequest, p *Packet) (err 
 			response.XAttrs = append(response.XAttrs, string(key))
 			return true
 		})
+		mp.extendTree.Put(treeItem)
 	}
 	var encoded []byte
 	encoded, err = json.Marshal(response)

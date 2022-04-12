@@ -31,6 +31,7 @@ func (mp *metaPartition) GetMultipart(req *proto.GetMultipartRequest, p *Packet)
 		p.PacketErrorWithBody(proto.OpNotExistErr, nil)
 		return
 	}
+	defer mp.multipartTree.Put(item)
 	multipart := item.(*Multipart)
 	resp := &proto.GetMultipartResponse{
 		Info: &proto.MultipartInfo{
@@ -69,6 +70,7 @@ func (mp *metaPartition) AppendMultipart(req *proto.AddMultipartPartRequest, p *
 		p.PacketErrorWithBody(proto.OpNotExistErr, nil)
 		return
 	}
+	mp.multipartTree.Put(item)
 	multipart := &Multipart{
 		id:  req.MultipartId,
 		key: req.Path,
@@ -125,6 +127,7 @@ func (mp *metaPartition) CreateMultipart(req *proto.CreateMultipartRequest, p *P
 		if storedItem == nil {
 			break
 		}
+		mp.multipartTree.Put(storedItem)
 	}
 
 	multipart := &Multipart{

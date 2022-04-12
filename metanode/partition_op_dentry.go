@@ -231,6 +231,7 @@ func (mp *metaPartition) Lookup(req *LookupReq, p *Packet) (err error) {
 			status = proto.OpErr
 			reply = []byte(err.Error())
 		}
+		mp.putDentry(dentry)
 	}
 	p.PacketErrorWithBody(status, reply)
 	return

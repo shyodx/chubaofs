@@ -58,6 +58,7 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		resp = mp.fsmCreateInode(ino)
 		if resp == proto.OpOk {
 			ino.MarkDirty()
+			ino.DecRef()
 		}
 	case opFSMUnlinkInode:
 		ino := NewInode(0, 0)

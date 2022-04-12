@@ -73,6 +73,7 @@ type Inode struct {
 	wbStatus uint32 // need write back to rocksdb
 	elapse   time.Time
 	elem     *list.Element // insert to inodeTree.lru
+	refcnt   int64
 }
 
 type InodeBatch []*Inode
@@ -607,6 +608,21 @@ func (i *Inode) DeleteLRU(head *list.List) {
 	if i.elem != nil {
 		head.Remove(i.elem)
 		i.elem = nil
+	}
+	i.Unlock()
+}
+
+func (i *Inode) IncRef() {
+	i.Lock()
+	i.refcnt++
+	i.Unlock()
+}
+
+func (i *Inode) DecRef() {
+	i.Lock()
+	i.refcnt--
+	if i.refcnt < 0 {
+		panic(fmt.Sprintf("Inode(%v) refcnt(%v)", i.Inode, i.refcnt))
 	}
 	i.Unlock()
 }

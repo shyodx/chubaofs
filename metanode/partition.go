@@ -1148,6 +1148,14 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 			continue
 		}
 
+		if ino.refcnt > 0 {
+			// referenced by someone
+			log.LogCriticalf("DEBUG: part[%v] ino[%v] refcnt[%v]", mp.config.PartitionId, ino.Inode, ino.refcnt)
+			ino.Unlock()
+			item = item.Next()
+			continue
+		}
+
 		if ino.wbStatus == WritebackNew {
 			// newly created inode is not ready yet
 			log.LogCriticalf("DEBUG: part[%v] ino[%v] is not ready", mp.config.PartitionId, ino.Inode)

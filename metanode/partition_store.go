@@ -199,6 +199,7 @@ func (mp *metaPartition) loadInode(rootDir string) (err error) {
 			mp.config.Cursor = ino.Inode
 		}
 		ino.MarkReady()
+		ino.DecRef()
 		numInodes += 1
 	}
 
@@ -837,6 +838,7 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 		mp.fsmCreateInode(inode)
 		mp.checkAndInsertFreeList(inode)
 		inode.MarkReady()
+		inode.DecRef()
 	}
 
 	log.LogInfof("loadInodeFromDB: load orphan complete: partitonid(%v) volume(%v) numinodes(%v)",
@@ -860,6 +862,7 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 		}
 		mp.fsmCreateInode(inode)
 		inode.MarkReady()
+		inode.DecRef()
 		return nil
 	}
 	skip := [][]byte{[]byte("0")}

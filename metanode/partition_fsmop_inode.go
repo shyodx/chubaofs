@@ -59,6 +59,7 @@ func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 			return
 		}
 	}
+	defer mp.inodeTree.Put(item)
 	i := item.(*Inode)
 	if i.ShouldDelete() {
 		resp.Status = proto.OpNotExistErr
@@ -85,6 +86,7 @@ func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
 	i := item.(*Inode)
 	if i.ShouldDelete() {
 		resp.Status = proto.OpNotExistErr
+		mp.inodeTree.Put(item)
 		return
 	}
 	/*
@@ -94,6 +96,10 @@ func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
 	i.AccessTime = Now.GetCurrentTime().Unix()
 	resp.Msg = i
 	return
+}
+
+func (mp *metaPartition) putInode(inode *Inode) {
+	mp.inodeTree.Put(inode)
 }
 
 func (mp *metaPartition) hasInode(ino *Inode) (ok bool) {
@@ -106,6 +112,7 @@ func (mp *metaPartition) hasInode(ino *Inode) (ok bool) {
 			return
 		}
 	}
+	defer mp.inodeTree.Put(item)
 	i := item.(*Inode)
 	if i.ShouldDelete() {
 		ok = false
@@ -134,6 +141,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 			return
 		}
 	}
+	defer mp.inodeTree.Put(item)
 
 	inode := item.(*Inode)
 	if inode.ShouldDelete() {
@@ -256,6 +264,7 @@ func (mp *metaPartition) fsmAppendExtents(ino *Inode) (status uint8) {
 			return
 		}
 	}
+	defer mp.inodeTree.Put(item)
 	ino2 := item.(*Inode)
 	if ino2.ShouldDelete() {
 		status = proto.OpNotExistErr
@@ -280,6 +289,7 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode) (status uint8) {
 			return
 		}
 	}
+	defer mp.inodeTree.Put(item)
 	ino2 := item.(*Inode)
 	if ino2.ShouldDelete() {
 		status = proto.OpNotExistErr
@@ -322,6 +332,7 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 			return
 		}
 	}
+	defer mp.inodeTree.Put(ino)
 	i := item.(*Inode)
 	if i.ShouldDelete() {
 		resp.Status = proto.OpNotExistErr
@@ -354,6 +365,7 @@ func (mp *metaPartition) fsmEvictInode(ino *Inode) (resp *InodeResponse) {
 			return
 		}
 	}
+	defer mp.inodeTree.Put(item)
 	i := item.(*Inode)
 	if i.ShouldDelete() {
 		return
@@ -400,6 +412,7 @@ func (mp *metaPartition) fsmSetAttr(req *SetattrRequest) (err error) {
 			return
 		}
 	}
+	defer mp.inodeTree.Put(item)
 	ino = item.(*Inode)
 	if ino.ShouldDelete() {
 		return

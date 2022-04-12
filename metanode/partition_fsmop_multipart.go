@@ -37,6 +37,7 @@ func (mp *metaPartition) fsmAppendMultipart(multipart *Multipart) (status uint8)
 	if storedItem == nil {
 		return proto.OpNotExistErr
 	}
+	defer mp.multipartTree.Put(storedItem)
 	storedMultipart, is := storedItem.(*Multipart)
 	if !is {
 		return proto.OpNotExistErr

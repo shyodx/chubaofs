@@ -50,6 +50,7 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 				return
 			}
 		}
+		defer mp.inodeTree.Put(item)
 		parIno = item.(*Inode)
 		if parIno.ShouldDelete() {
 			status = proto.OpNotExistErr
@@ -94,6 +95,10 @@ func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
 	}
 	dentry = item.(*Dentry)
 	return dentry, status
+}
+
+func (mp *metaPartition) putDentry(dentry *Dentry) {
+	mp.dentryTree.Put(dentry)
 }
 
 func (mp *metaPartition) deleteDentryFromDB(dentry *Dentry) {

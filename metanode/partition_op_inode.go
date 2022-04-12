@@ -190,6 +190,7 @@ func (mp *metaPartition) InodeGet(req *InodeGetReq, p *Packet) (err error) {
 				reply = []byte(err.Error())
 			}
 		}
+		mp.putInode(ino)
 	}
 	p.PacketErrorWithBody(status, reply)
 	return
@@ -207,6 +208,7 @@ func (mp *metaPartition) InodeGetBatch(req *InodeGetReqBatch, p *Packet) (err er
 			if replyInfo(inoInfo, retMsg.Msg) {
 				resp.Infos = append(resp.Infos, inoInfo)
 			}
+			mp.putInode(retMsg.Msg)
 		}
 	}
 	data, err := json.Marshal(resp)
