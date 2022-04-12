@@ -90,25 +90,6 @@ func (b *Btree) GetForWrite(key btree.Item) (item btree.Item) {
 	return
 }
 
-func (b *Btree) CopyFind(key btree.Item, fn func(i btree.Item)) {
-	b.Lock()
-	item := b.tree.Get(key)
-	if item != nil {
-		if b.rdonly {
-			panic("Write a read only tree")
-		}
-		if item.(BtreeItem).GetVersion() != b.ver {
-			newItem := item.(BtreeItem).Copy()
-			newItem.(BtreeItem).SetVersion(b.ver)
-			b.tree.ReplaceOrInsert(newItem)
-			item = newItem
-		}
-	}
-	if !b.rdonly && item != nil {
-		item.(BtreeItem).UpdateLRU(b.lru)
-	}
-	fn(item)
-	b.Unlock()
 }
 
 // Has checks if the key exists in the btree.

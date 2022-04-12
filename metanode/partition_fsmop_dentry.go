@@ -136,23 +136,20 @@ func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
 		resp.Status = proto.OpNotExistErr
 		return
 	} else {
-		mp.inodeTree.CopyFind(NewInode(dentry.ParentId, 0),
-			func(item btree.Item) {
-				if item == nil {
-					var err error
-					if item, err = mp.ReadInodeFromDB(dentry.ParentId); err != nil {
-						return
-					}
-				}
-				if item != nil {
-					ino := item.(*Inode)
-					if !ino.ShouldDelete() {
-						ino.DecNLink()
-						ino.SetMtime()
-						ino.MarkDirty()
-					}
-				}
-			})
+		pItem := mp.inodeTree.GetForWrite(&Inode{Inode: dentry.ParentId})
+		if pItem == nil {
+			var err error
+			if pItem, err = mp.ReadInodeFromDB(dentry.ParentId, false); err != nil {
+				log.LogErrorf("Read inode(%v) item is nil: %v", dentry.ParentId, err)
+				return
+			}
+		}
+		pInode := pItem.(*Inode)
+		if !pInode.ShouldDelete() {
+			pInode.DecNLink()
+			pInode.SetMtime()
+			pInode.MarkDirty()
+		}
 	}
 	resp.Msg = item.(*Dentry)
 	return
@@ -171,15 +168,14 @@ func (mp *metaPartition) fsmUpdateDentry(dentry *Dentry) (
 	resp *DentryResponse) {
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
-	mp.dentryTree.CopyFind(dentry, func(item btree.Item) {
-		if item == nil {
-			resp.Status = proto.OpNotExistErr
-			return
-		}
-		d := item.(*Dentry)
-		d.Inode, dentry.Inode = dentry.Inode, d.Inode
-		resp.Msg = dentry
-	})
+	item := mp.dentryTree.GetForWrite(dentry)
+	if item == nil {
+		resp.Status = proto.OpNotExistErr
+		return
+	}
+	d := item.(*Dentry)
+	d.Inode = dentry.Inode
+	resp.Msg = dentry
 	return
 }
 
