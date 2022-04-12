@@ -36,7 +36,7 @@ const (
 	TempFileValidTime             = 86400 //units: sec
 	DeleteInodeFileExtension      = "INODE_DEL"
 	DeleteWorkerCnt               = 10
-	InodeNLink0DelayDeleteSeconds = 24 * 3600
+	InodeNLink0DelayDeleteSeconds = 60 //24 * 3600
 )
 
 func (mp *metaPartition) startFreeList() (err error) {
