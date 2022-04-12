@@ -17,6 +17,7 @@ package metanode
 import (
 	"container/list"
 	"sync"
+	"time"
 
 	"github.com/cubefs/cubefs/util/btree"
 )
@@ -57,8 +58,27 @@ func NewBtree() *Btree {
 	}
 }
 
+func debugDeadlock(ch chan struct{}) {
+	timer := time.NewTimer(30 * time.Second)
+	go func() {
+		for {
+			select {
+			case <-timer.C:
+				panic("[debugDeadlock] timeout")
+			case <- ch:
+				timer.Stop()
+				break
+			}
+		}
+	}()
+}
+
 // GetForRead returns the a readonly object of the given key in the btree.
 func (b *Btree) GetForRead(key btree.Item) (item btree.Item) {
+	ch := make(chan struct{})
+	defer close(ch)
+	debugDeadlock(ch)
+
 	b.RLock()
 	item = b.tree.Get(key)
 	if item != nil {
@@ -73,6 +93,10 @@ func (b *Btree) GetForRead(key btree.Item) (item btree.Item) {
 
 // GetForRead returns the a writable object of the given key in the btree.
 func (b *Btree) GetForWrite(key btree.Item) (item btree.Item) {
+	ch := make(chan struct{})
+	defer close(ch)
+	debugDeadlock(ch)
+
 	b.Lock()
 	if b.rdonly {
 		panic("Write a read only tree")
@@ -102,6 +126,10 @@ func (b *Btree) Put(item btree.Item) {
 
 // Has checks if the key exists in the btree.
 func (b *Btree) Has(key btree.Item) (ok bool) {
+	ch := make(chan struct{})
+	defer close(ch)
+	debugDeadlock(ch)
+
 	b.RLock()
 	ok = b.tree.Has(key)
 	b.RUnlock()
@@ -110,6 +138,10 @@ func (b *Btree) Has(key btree.Item) (ok bool) {
 
 // Delete deletes the object by the given key.
 func (b *Btree) Delete(key btree.Item) (item btree.Item) {
+	ch := make(chan struct{})
+	defer close(ch)
+	debugDeadlock(ch)
+
 	b.Lock()
 	if b.rdonly {
 		panic("Write a read only tree")
@@ -124,6 +156,10 @@ func (b *Btree) Delete(key btree.Item) (item btree.Item) {
 
 // ReplaceOrInsert is the wrapper of google's btree ReplaceOrInsert.
 func (b *Btree) ReplaceOrInsert(key btree.Item, replace bool) (item btree.Item, ok bool) {
+	ch := make(chan struct{})
+	defer close(ch)
+	debugDeadlock(ch)
+
 	b.Lock()
 	if b.rdonly {
 		panic("Write a read only tree")
@@ -156,6 +192,10 @@ func (b *Btree) ReplaceOrInsert(key btree.Item, replace bool) (item btree.Item, 
 // This function scans the entire btree. When the data is huge, it is not recommended to use this function online.
 // Instead, it is recommended to call CloneTree to obtain the snapshot of the current btree, and then do the scan on the snapshot.
 func (b *Btree) Ascend(fn func(i btree.Item) bool) {
+	ch := make(chan struct{})
+	defer close(ch)
+	debugDeadlock(ch)
+
 	b.RLock()
 	b.tree.Ascend(fn)
 	b.RUnlock()
@@ -163,6 +203,10 @@ func (b *Btree) Ascend(fn func(i btree.Item) bool) {
 
 // AscendRange is the wrapper of the google's btree AscendRange.
 func (b *Btree) AscendRange(greaterOrEqual, lessThan btree.Item, iterator func(i btree.Item) bool) {
+	ch := make(chan struct{})
+	defer close(ch)
+	debugDeadlock(ch)
+
 	b.RLock()
 	b.tree.AscendRange(greaterOrEqual, lessThan, iterator)
 	b.RUnlock()
@@ -170,6 +214,10 @@ func (b *Btree) AscendRange(greaterOrEqual, lessThan btree.Item, iterator func(i
 
 // AscendGreaterOrEqual is the wrapper of the google's btree AscendGreaterOrEqual
 func (b *Btree) AscendGreaterOrEqual(pivot btree.Item, iterator func(i btree.Item) bool) {
+	ch := make(chan struct{})
+	defer close(ch)
+	debugDeadlock(ch)
+
 	b.RLock()
 	b.tree.AscendGreaterOrEqual(pivot, iterator)
 	b.RUnlock()
@@ -177,6 +225,10 @@ func (b *Btree) AscendGreaterOrEqual(pivot btree.Item, iterator func(i btree.Ite
 
 // GetTree returns the snapshot of a btree.
 func (b *Btree) CloneTree() *Btree {
+	ch := make(chan struct{})
+	defer close(ch)
+	debugDeadlock(ch)
+
 	b.Lock()
 	old := b.tree.Clone()
 	oldVer := b.ver
