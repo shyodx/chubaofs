@@ -14,7 +14,13 @@
 
 package metanode
 
-import "github.com/cubefs/cubefs/proto"
+import (
+	"fmt"
+
+	"github.com/cubefs/cubefs/proto"
+	"github.com/cubefs/cubefs/util/errors"
+	"github.com/cubefs/cubefs/util/log"
+)
 
 func (mp *metaPartition) fsmCreateMultipart(multipart *Multipart) (status uint8) {
 	_, ok := mp.multipartTree.ReplaceOrInsert(multipart, false)
@@ -29,6 +35,7 @@ func (mp *metaPartition) fsmRemoveMultipart(multipart *Multipart) (status uint8)
 	if deletedItem == nil {
 		return proto.OpNotExistErr
 	}
+	mp.deleteMultipartFromDB(multipart)
 	return proto.OpOk
 }
 
@@ -49,4 +56,18 @@ func (mp *metaPartition) fsmAppendMultipart(multipart *Multipart) (status uint8)
 		}
 	}
 	return proto.OpOk
+}
+
+func (mp *metaPartition) deleteMultipartFromDB(multipart *Multipart) {
+	cf, found := mp.metaDB.cfs["multipart"]
+	if !found {
+		err := errors.New("multipart column family not exist")
+		panic(err)
+	}
+
+	key := []byte(fmt.Sprintf("%s_%d", multipart.key, multipart.id))
+	if _, err := mp.metaDB.db.DelCF(cf, key, false); err != nil {
+		log.LogErrorf("Failed to delete multipart %v:%v from DB: %v", multipart.key, multipart.id, err)
+		panic(err)
+	}
 }
