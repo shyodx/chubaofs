@@ -118,17 +118,15 @@ func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
 
 	var item interface{}
 	if checkInode {
-		item = mp.dentryTree.Execute(func(tree *btree.BTree) btree.Item {
-			d := tree.Get(dentry)
-			if d == nil {
-				return nil
+		item = mp.dentryTree.GetForWrite(dentry)
+		if item != nil {
+			if item.(*Dentry).Inode != dentry.Inode {
+				item = nil
+			} else {
+				mp.deleteDentryFromDB(dentry)
+				item = mp.dentryTree.Delete(dentry)
 			}
-			if d.(*Dentry).Inode != dentry.Inode {
-				return nil
-			}
-			mp.deleteDentryFromDB(dentry)
-			return mp.dentryTree.tree.Delete(dentry)
-		})
+		}
 	} else {
 		mp.deleteDentryFromDB(dentry)
 		item = mp.dentryTree.Delete(dentry)

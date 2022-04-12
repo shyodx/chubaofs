@@ -133,15 +133,6 @@ func (b *Btree) Delete(key btree.Item) (item btree.Item) {
 	return
 }
 
-func (b *Btree) Execute(fn func(tree *btree.BTree) btree.Item) btree.Item {
-	b.Lock()
-	defer b.Unlock()
-	if b.rdonly {
-		panic("Write a read only tree")
-	}
-	return fn(b.tree)
-}
-
 // ReplaceOrInsert is the wrapper of google's btree ReplaceOrInsert.
 func (b *Btree) ReplaceOrInsert(key btree.Item, replace bool) (item btree.Item, ok bool) {
 	b.Lock()
