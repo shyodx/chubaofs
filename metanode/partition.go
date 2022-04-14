@@ -1156,14 +1156,6 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 			continue
 		}
 
-		if ino.wbStatus == WritebackNew {
-			// newly created inode is not ready yet
-			log.LogCriticalf("DEBUG: part[%v] ino[%v] is not ready", mp.config.PartitionId, ino.Inode)
-			ino.Unlock()
-			item = item.Next()
-			continue
-		}
-
 		if ino.NLink == 0 /*ino.Flag&DeleteMarkFlag == DeleteMarkFlag*/ {
 			// skip orphan inode
 			log.LogCriticalf("DEBUG: part[%v] ino[%v] NLink[%v] DeleteMarkFlag[%v], skip orphan", mp.config.PartitionId, ino.Inode, ino.NLink, ino.Flag&DeleteMarkFlag)
@@ -1172,7 +1164,7 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 			continue
 		}
 
-		if ino.wbStatus != WritebackFree {
+		if ino.IsDirty() {
 			// wait storeToDB to write all diry inodes back
 			ino.Unlock()
 			item = item.Next()
@@ -1252,7 +1244,5 @@ func (mp *metaPartition) ReadInodeFromDB(ino uint64, ro bool) (btree.Item, error
 		}
 		inode = newItem.(*Inode)
 	}
-
-	inode.MarkReady()
 	return inode, nil
 }

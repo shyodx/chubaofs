@@ -198,7 +198,6 @@ func (mp *metaPartition) loadInode(rootDir string) (err error) {
 		if mp.config.Cursor < ino.Inode {
 			mp.config.Cursor = ino.Inode
 		}
-		ino.MarkReady()
 		ino.DecRef()
 		numInodes += 1
 	}
@@ -750,6 +749,7 @@ func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
 			if err = mp.metaDB.db.PutCF(inodeCF, key, data, false); err != nil {
 				return false
 			}
+			inode.newInode.TryClearDirty(inode.dirties)
 			cnt++
 		}
 		return true
@@ -837,7 +837,6 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 		}
 		mp.fsmCreateInode(inode)
 		mp.checkAndInsertFreeList(inode)
-		inode.MarkReady()
 		inode.DecRef()
 	}
 
@@ -861,7 +860,6 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 			return nil
 		}
 		mp.fsmCreateInode(inode)
-		inode.MarkReady()
 		inode.DecRef()
 		return nil
 	}

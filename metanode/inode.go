@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cubefs/cubefs/proto"
@@ -70,7 +71,8 @@ type Inode struct {
 	Extents *SortedExtents
 
 	ver      uint64 // used only for Btree
-	wbStatus uint32 // need write back to rocksdb
+	newInode *Inode
+	dirties  uint32 // atomic, 0: clean, >0: dirty
 	elapse   time.Time
 	elem     *list.Element // insert to inodeTree.lru
 	refcnt   int64
@@ -116,7 +118,6 @@ func NewInode(ino uint64, t uint32) *Inode {
 		ModifyTime: ts,
 		NLink:      1,
 		Extents:    NewSortedExtents(),
-		wbStatus:   WritebackFree,
 		elapse:     time.Now(),
 	}
 	if proto.IsDir(t) {
@@ -151,8 +152,12 @@ func (i *Inode) Copy() btree.Item {
 	newIno.Flag = i.Flag
 	newIno.Reserved = i.Reserved
 	newIno.Extents = i.Extents.Clone()
-	newIno.wbStatus = i.wbStatus
 	newIno.elapse = time.Now()
+	newIno.dirties = i.dirties
+	if i.newInode != nil {
+		panic("old inode's newInode is not nil")
+	}
+	i.newInode = newIno
 	// XXX: elem is not copied
 	i.RUnlock()
 	return newIno
@@ -565,22 +570,15 @@ func (i *Inode) SetMtime() {
 }
 
 func (i *Inode) IsDirty() bool {
-	i.RLock()
-	dirty := (i.wbStatus != WritebackFree)
-	i.RUnlock()
-	return dirty
+	return !atomic.CompareAndSwapUint32(&i.dirties, 0, 0)
 }
 
 func (i *Inode) MarkDirty() {
-	i.Lock()
-	i.wbStatus = WritebackNeed
-	i.Unlock()
+	atomic.AddUint32(&i.dirties, 1)
 }
 
-func (i *Inode) MarkReady() {
-	i.Lock()
-	i.wbStatus = WritebackFree
-	i.Unlock()
+func (i *Inode) TryClearDirty(old uint32) {
+	atomic.CompareAndSwapUint32(&i.dirties, old, 0)
 }
 
 func (i *Inode) UpdateLRU(head *list.List) {
@@ -600,7 +598,7 @@ func (i *Inode) UpdateLRU(head *list.List) {
 
 func (i *Inode) DeleteLRU(head *list.List) {
 	i.Lock()
-	if i.wbStatus == WritebackNeed && i.NLink > 0 {
+	if i.IsDirty() && i.NLink > 0 {
 		i.Unlock()
 		panic(fmt.Sprintf("Cannot delete dirty ino(%v) nlink(%v)", i.Inode, i.NLink))
 		return
