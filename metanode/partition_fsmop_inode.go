@@ -41,8 +41,15 @@ func (mp *metaPartition) fsmCreateInode(ino *Inode) (status uint8) {
 	status = proto.OpOk
 	// ino cannot be referenced by now, it's safe to change inode without lock
 	ino.refcnt = 1
-	if _, ok := mp.inodeTree.ReplaceOrInsert(ino, false); !ok {
+	old, ok := mp.inodeTree.ReplaceOrInsert(ino, false)
+	if !ok {
 		status = proto.OpExistErr
+		return
+	}
+	if old != nil {
+		old.(*Inode).Lock()
+		old.(*Inode).newInode = ino
+		old.(*Inode).Unlock()
 	}
 	return
 }
@@ -129,7 +136,7 @@ func (mp *metaPartition) Ascend(f func(i btree.Item) bool) {
 
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
-	var err  error
+	var err error
 
 	resp = NewInodeResponse()
 	resp.Status = proto.OpOk

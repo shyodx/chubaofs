@@ -16,7 +16,6 @@ package metanode
 
 import (
 	"bufio"
-	"container/list"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -56,51 +55,6 @@ const (
 	NewCheckpointDir       = "checkpoint.new"
 	CheckpointDirExpPrefix = "expired_checkpoint_"
 )
-
-type InodeStats struct {
-	ver    uint32 // HARD CODED, keep ver the first element
-	rsvd   uint32
-	total  uint64
-	cursor uint64
-}
-
-type InodeStatsVerion struct {
-	Ver  uint32
-	Size uint32
-}
-
-var ISVer1 = &InodeStatsVerion{1, 24}
-
-func (is *InodeStats) String() string {
-	return fmt.Sprintf("Ver(%v) Total(%v) Cursor(%v)", is.ver, is.total, is.cursor)
-}
-
-func (is *InodeStats) Marshal() []byte {
-	var data []byte
-	switch is.ver {
-	case ISVer1.Ver:
-		data = make([]byte, ISVer1.Size)
-		binary.BigEndian.PutUint32(data[0:4], is.ver)
-		binary.BigEndian.PutUint64(data[8:16], is.total)
-		binary.BigEndian.PutUint64(data[16:24], is.cursor)
-	}
-	return data
-}
-
-func (is *InodeStats) Unmarshal(data []byte) {
-	is.ver = binary.BigEndian.Uint32(data[0:4])
-	switch is.ver {
-	case ISVer1.Ver:
-		if len(data) != int(ISVer1.Size) {
-			break
-		}
-		is.total = binary.BigEndian.Uint64(data[8:16])
-		is.cursor = binary.BigEndian.Uint64(data[16:24])
-		return
-	}
-	msg := fmt.Sprintf("Unrecognize InodeStats: ver[%v] len[%v]", is.ver, len(data))
-	panic(msg)
-}
 
 func (mp *metaPartition) loadMetadata() (err error) {
 	metaFile := path.Join(mp.config.RootDir, metadataFile)
@@ -703,32 +657,9 @@ func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
 		cnt     uint64
 	)
 
-	orphanCF, found := mp.metaDB.cfs["orphaninode"]
-	if !found {
-		err = errors.New("orphan inode column family not found")
-		return
-	}
 	inodeCF, found := mp.metaDB.cfs["inode"]
 	if !found {
 		err = errors.New("inode column family not found")
-		return
-	}
-
-	// save all orphan inodes
-	orphanHandler := func(item *list.Element) error {
-		// FIXME: should use PutBatchCF
-		// For example, add two funcs: PrepareBatchCF and WriteBatch
-		// call PrepareBathCF to put ino into batch, and every N items,
-		// call WriteBatch to write the batch
-		ino := item.Value.(uint64)
-		key := []byte(fmt.Sprintf("%v", ino))
-		log.LogCriticalf("DEBUG: Part(%v) save ino %v to orphaninode cf", mp.config.PartitionId, ino)
-		if e := mp.metaDB.db.PutCF(orphanCF, key, nil, false); e != nil {
-			return e
-		}
-		return nil
-	}
-	if err = mp.freeList.ForEach(orphanHandler); err != nil {
 		return
 	}
 
@@ -740,8 +671,7 @@ func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
 	inodeHandler := func(item btree.Item) bool {
 		// inode is COW, so no need to lock it
 		inode := item.(*Inode)
-		if saveAll || inode.IsDirty() {
-			log.LogCriticalf("DEBUG: Part(%v) save ino %v to inode cf", mp.config.PartitionId, inode.Inode)
+		if saveAll || inode.IsDirty() || inode.IsTempFile() {
 			key := []byte(fmt.Sprintf("%v", inode.Inode))
 			if data, err = inode.Marshal(); err != nil {
 				return false
@@ -749,24 +679,32 @@ func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
 			if err = mp.metaDB.db.PutCF(inodeCF, key, data, false); err != nil {
 				return false
 			}
-			inode.newInode.TryClearDirty(inode.dirties)
+			var uptodate bool
+			if inode.newInode != nil {
+				// a COW inode
+				uptodate = inode.newInode.TryClearDirty(inode.dirties)
+				if !inode.IsDirty() {
+					str := fmt.Sprintf("must be dirty: Part(%v) ino(%v) dirty(%v) nlink(%v) uptodate(%v) saveall(%v)",
+						mp.config.PartitionId, inode.Inode, inode.dirties, inode.NLink, uptodate, saveAll)
+					panic(str)
+				}
+			} else {
+				// a newly created inode or a deleted inode (Btree.ReplaceOrInsert does not set newInode)
+				if inode.IsDirty() && !inode.IsTempFile() {
+					str := fmt.Sprintf("must be clean: Part(%v) ino(%v) dirty(%v) nlink(%v) uptodate(%v) saveall(%v)",
+						mp.config.PartitionId, inode.Inode, inode.dirties, inode.NLink, uptodate, saveAll)
+					//panic(str)
+					log.LogCritical("DEBUG:", str)
+				}
+				uptodate = inode.TryClearDirty(inode.dirties)
+			}
+			log.LogCriticalf("DEBUG: Part(%v) save ino(%v) dirty(%v) nlink(%v) uptodate(%v) to inode cf",
+				mp.config.PartitionId, inode.Inode, inode.dirties, inode.NLink, uptodate)
 			cnt++
 		}
 		return true
 	}
 	sm.inodeTree.Ascend(inodeHandler)
-
-	// save InodeStats
-	// FIXME: we only have a COW on the tree, but Cursor is not COW values
-	// FIXME: a larger cursor is safe?
-	is := &InodeStats{
-		ver:    ISVer1.Ver,
-		total:  uint64(sm.inodeTree.Len()),
-		cursor: mp.config.Cursor,
-	}
-	if err = mp.metaDB.db.PutCF(inodeCF, []byte("0"), is.Marshal(), false); err != nil {
-		return err
-	}
 
 	log.LogInfof("storeInodeToDB: store complete: partitoinID(%v) volume(%v) numInodes(%v) dirytInodes(%v)",
 		mp.config.PartitionId, mp.config.VolName, sm.inodeTree.Len(), cnt)
@@ -777,14 +715,7 @@ func (mp *metaPartition) storeInodeToDB(sm *storeMsg) (err error) {
 }
 
 func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
-	var (
-		orphanCF *gorocksdb.ColumnFamilyHandle
-		inodeCF  *gorocksdb.ColumnFamilyHandle
-		data     interface{}
-		is       InodeStats
-		found    bool
-		nr       uint64
-	)
+	var nr uint64
 
 	if _, err = os.Stat(dir); err != nil {
 		if os.IsNotExist(err) {
@@ -793,13 +724,8 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 		return
 	}
 
-	if orphanCF, found = mp.metaDB.cfs["orphaninode"]; !found {
-		err = fmt.Errorf("orphaninode column family not exist")
-		log.LogError(err)
-		log.LogCriticalf("DEBUG: [loadInodeFromDB] Part(%v): %v", mp.config.RootDir, err)
-		return
-	}
-	if inodeCF, found = mp.metaDB.cfs["inode"]; !found {
+	inodeCF, found := mp.metaDB.cfs["inode"]
+	if !found {
 		err = fmt.Errorf("inode column family not exist")
 		log.LogError(err)
 		log.LogCriticalf("DEBUG: [loadInodeFromDB] Part(%v): %v", mp.config.RootDir, err)
@@ -807,85 +733,30 @@ func (mp *metaPartition) loadInodeFromDB(dir string) (err error) {
 	}
 	db := mp.metaDB.db
 
-	// load all orphan inodes
-	orphInoStr := make([]string, 0)
-	loadOphanFunc := func(k, v *gorocksdb.Slice) error {
-		inoStr := string(v.Data())
-		log.LogCriticalf("DEBUG: Part(%v) load ino(%v) from orphaninode cf", mp.config.PartitionId, inoStr)
-		orphInoStr = append(orphInoStr, inoStr)
-		return nil
-	}
-	if nr, err = db.LoadNCF(orphanCF, 0, loadOphanFunc, nil); err != nil {
-		log.LogCriticalf("DEBUG: [loadInodeFromDB] load orphan Part(%v): %v", mp.config.RootDir, err)
-		panic(err)
-	}
-
-	for _, inoStr := range orphInoStr {
-		data, err := db.GetCF(inodeCF, []byte(inoStr))
-		if err != nil {
-			log.LogCriticalf("DEBUG: Failed Part(%v) load orphan ino(%v) from inode cf: %v", mp.config.PartitionId, inoStr, err)
-			err = fmt.Errorf("Failed load Part(%v) orphan ino(%v) from orphaninode cf: %v",
-				mp.config.PartitionId, inoStr, err)
-			return err
-		}
-		inode := NewInode(0, 0)
-		if err = inode.Unmarshal(data.([]byte)); err != nil {
-			log.LogCriticalf("DEBUG: Failed Part(%v) unmarshal ino(%v): %v", mp.config.PartitionId, inoStr, err)
-			err = fmt.Errorf("Failed unmarshal Part(%v) ino(%v): %v",
-				mp.config.PartitionId, inoStr, err)
-			return err
-		}
-		mp.fsmCreateInode(inode)
-		mp.checkAndInsertFreeList(inode)
-		inode.DecRef()
-	}
-
-	log.LogInfof("loadInodeFromDB: load orphan complete: partitonid(%v) volume(%v) numinodes(%v)",
-		mp.config.PartitionId, mp.config.VolName, nr)
-	log.LogCriticalf("DEBUG: loadInodeFromDB: load orphan complete: partitonid(%v) volume(%v) numinodes(%v)",
-		mp.config.PartitionId, mp.config.VolName, nr)
-
-	// load all inodes
-	// FIXME: load the first inode only?
-	// FIXME: can we put inodes as LRU order in rocksdb, and load them as
-	// the order back to memory? If it could, we could load the first N inodes
+	// load all inodes including orphan inodes
 	loadInodeFunc := func(k, v *gorocksdb.Slice) error {
 		inode := NewInode(0, 0)
 		if e := inode.Unmarshal(v.Data()); e != nil {
 			return errors.NewErrorf("[loadInodeFromDB] Unmarshal: %v", e)
 		}
-		log.LogCriticalf("DEBUG: Part(%v) load ino(%v) from inode cf", mp.config.PartitionId, inode.Inode)
-		if inode.NLink == 0 {
-			// skip orphan inodes
-			return nil
-		}
+		log.LogCriticalf("DEBUG: Part(%v) load ino(%v) nlink(%v) from inode cf", mp.config.PartitionId, inode.Inode, inode.NLink)
 		mp.fsmCreateInode(inode)
+		mp.checkAndInsertFreeList(inode)
+		if mp.config.Cursor < inode.Inode {
+			mp.config.Cursor = inode.Inode
+		}
 		inode.DecRef()
 		return nil
 	}
-	skip := [][]byte{[]byte("0")}
-	if nr, err = db.LoadNCF(inodeCF, 0, loadInodeFunc, skip); err != nil {
+	if nr, err = db.LoadNCF(inodeCF, 0, loadInodeFunc, nil); err != nil {
 		log.LogCriticalf("DEBUG: [loadInodeFromDB] load inode Part(%v): %v", mp.config.RootDir, err)
 		panic(err)
 	}
 
-	// load InodeStat
- 	// FIXME: get max ino correctly
- 	// FIXME: use 0 as a specific value for inodes?
- 	// FIXME: key should be string or raw array?
-	key := []byte(fmt.Sprintf("%v", 0))
-	if data, err = db.GetCF(inodeCF, key); err != nil {
-		log.LogErrorf("[loadInodeFromDB] load statistics info: %v", err)
-		log.LogCriticalf("DEBUG: [loadInodeFromDB] load statistics info Part(%v): %v", mp.config.RootDir, err)
-		return
-	}
-	is.Unmarshal(data.([]byte))
-
-	mp.config.Cursor = is.cursor
-	log.LogInfof("loadInodeFromDB: load complete: partitonid(%v) volume(%v) numinodes(%v) IS(%v)",
-		mp.config.PartitionId, mp.config.VolName, nr, is.String())
-	log.LogCriticalf("DEBUG: loadInodeFromDB: load complete: partitonid(%v) volume(%v) numinodes(%v) IS(%v)",
-		mp.config.PartitionId, mp.config.VolName, nr, is.String())
+	log.LogInfof("loadInodeFromDB: load complete: partitonid(%v) volume(%v) numinodes(%v)",
+		mp.config.PartitionId, mp.config.VolName, nr)
+	log.LogCriticalf("DEBUG: loadInodeFromDB: load complete: partitonid(%v) volume(%v) numinodes(%v)",
+		mp.config.PartitionId, mp.config.VolName, nr)
 
 	return
 }

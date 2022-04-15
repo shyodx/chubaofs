@@ -321,7 +321,12 @@ func (mp *metaPartition) ApplySnapshot(peers []raftproto.Peer, iter raftproto.Sn
 				cursor = ino.Inode
 			}
 			ino.MarkDirty()
-			inodeTree.ReplaceOrInsert(ino, true)
+			old, _ := inodeTree.ReplaceOrInsert(ino, true)
+			if old != nil {
+				old.(*Inode).Lock()
+				old.(*Inode).newInode = ino
+				old.(*Inode).Unlock()
+			}
 			log.LogDebugf("ApplySnapshot: create inode: partitonID(%v) inode(%v).", mp.config.PartitionId, ino)
 		case opFSMCreateDentry:
 			dentry := &Dentry{}

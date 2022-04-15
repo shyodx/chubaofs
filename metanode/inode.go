@@ -21,12 +21,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/cubefs/cubefs/proto"
 	"github.com/cubefs/cubefs/util/btree"
+	"github.com/cubefs/cubefs/util/log"
 )
 
 const (
@@ -574,11 +577,14 @@ func (i *Inode) IsDirty() bool {
 }
 
 func (i *Inode) MarkDirty() {
-	atomic.AddUint32(&i.dirties, 1)
+	dirties := atomic.AddUint32(&i.dirties, 1)
+	if pc, file, line, ok := runtime.Caller(1); ok {
+		log.LogCriticalf("DEBUG: %s:%d: %v mark ino (%v) dirty(%v)", path.Base(file), line, runtime.FuncForPC(pc).Name(), i.Inode, dirties)
+	}
 }
 
-func (i *Inode) TryClearDirty(old uint32) {
-	atomic.CompareAndSwapUint32(&i.dirties, old, 0)
+func (i *Inode) TryClearDirty(old uint32) bool {
+	return atomic.CompareAndSwapUint32(&i.dirties, old, 0)
 }
 
 func (i *Inode) UpdateLRU(head *list.List) {

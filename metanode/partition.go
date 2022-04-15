@@ -981,7 +981,7 @@ func (mp *metaPartition) releaseMetaDB() {
 func (mp *metaPartition) storeToDB(sm *storeMsg) (err error) {
 	var cp *gorocksdb.Checkpoint
 
-	log.LogCriticalf("DEBUG: Part(%v) start snapshot", mp.config.PartitionId)
+	log.LogCriticalf("DEBUG: Part(%v) start store to snapshot", mp.config.PartitionId)
 	// cleanup
 	newCPDir := path.Join(mp.config.RootDir, NewCheckpointDir)
 	if _, err = os.Stat(newCPDir); err == nil {

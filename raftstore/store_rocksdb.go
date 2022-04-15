@@ -316,9 +316,11 @@ func (rs *RocksDBStore) LoadNCF(
 
 		key := iter.Key()
 		val := iter.Value()
-		for _, k := range skipKeys {
-			if bytes.Compare(key.Data(), k) == 0 {
-				goto next
+		if skipKeys != nil {
+			for _, k := range skipKeys {
+				if bytes.Compare(key.Data(), k) == 0 {
+					goto next
+				}
 			}
 		}
 		if err = loadFunc(iter.Key(), iter.Value()); err != nil {
