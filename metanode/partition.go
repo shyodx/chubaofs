@@ -1056,8 +1056,8 @@ func (mp *metaPartition) storeToDB(sm *storeMsg) (err error) {
 	os.RemoveAll(path.Join(mp.config.RootDir, snapshotBackup))
 
 	// clear MetaDBNew
-	log.LogCriticalf("DEBUG: Part(%v) clear MetaDBNew", mp.config.PartitionId)
 	mp.metaDB.ClearStatus(MetaDBNew)
+	log.LogCriticalf("DEBUG: Part(%v) clear MetaDBNew st(%v)", mp.config.PartitionId, mp.metaDB.status)
 
 	return nil
 }
@@ -1104,7 +1104,7 @@ func (mp *metaPartition) removeOldestInodeLRU() {
 	)
 
 	if mp.metaDB.TestStatus(MetaDBNew) {
-		log.LogCriticalf("DEBUG: part[%v] is a new db, wait snapshot", mp.config.PartitionId)
+		log.LogCriticalf("DEBUG: part[%v] is a new db st(%v), wait snapshot", mp.config.PartitionId, mp.metaDB.status)
 		// this is a new DB, wait snapshot to save all nodes
 		return
 	}

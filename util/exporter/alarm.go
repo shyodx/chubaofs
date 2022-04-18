@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/cubefs/cubefs/util/log"
 	"github.com/cubefs/cubefs/util/ump"
 )
 
@@ -45,7 +44,7 @@ type Alarm struct {
 func Warning(detail string) (a *Alarm) {
 	key := fmt.Sprintf("%v_%v_warning", clustername, modulename)
 	ump.Alarm(key, detail)
-	log.LogCritical(key, detail)
+	//log.LogCritical(key, detail)
 	if !enabledPrometheus {
 		return
 	}
