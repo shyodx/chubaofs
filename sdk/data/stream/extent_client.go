@@ -153,11 +153,14 @@ retry:
 }
 
 // Open request shall grab the lock until request is sent to the request channel
-func (client *ExtentClient) OpenStream(inode uint64) error {
+func (client *ExtentClient) OpenStream(inode uint64, newly bool) error {
 	client.streamerLock.Lock()
 	s, ok := client.streamers[inode]
 	if !ok {
 		s = NewStreamer(client, inode)
+		if newly {
+			s.SetNewlyCreatedStreamer()
+		}
 		client.streamers[inode] = s
 	}
 	if client.noFlushOnClose {
@@ -243,8 +246,12 @@ func (client *ExtentClient) Write(inode uint64, offset int, data []byte, flags i
 	}
 
 	s.once.Do(func() {
+		t1 := time.Now()
 		// TODO unhandled error
-		s.GetExtents()
+		if s.ShouldGetExtents() {
+			s.GetExtents()
+		}
+		log.LogErrorf("Write: do once: GetExtents costs %v", time.Since(t1))
 	})
 
 	write, err = s.IssueWriteRequest(offset, data, flags)
@@ -284,7 +291,9 @@ func (client *ExtentClient) Read(inode uint64, data []byte, offset int, size int
 	}
 
 	s.once.Do(func() {
-		s.GetExtents()
+		if s.ShouldGetExtents() {
+			s.GetExtents()
+		}
 	})
 
 	err = s.IssueFlushRequest()

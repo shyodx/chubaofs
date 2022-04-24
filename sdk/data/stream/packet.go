@@ -17,13 +17,15 @@ package stream
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/chubaofs/chubaofs/proto"
-	"github.com/chubaofs/chubaofs/sdk/data/wrapper"
-	"github.com/chubaofs/chubaofs/util"
 	"hash/crc32"
 	"io"
 	"net"
 	"time"
+
+	"github.com/chubaofs/chubaofs/proto"
+	"github.com/chubaofs/chubaofs/sdk/data/wrapper"
+	"github.com/chubaofs/chubaofs/util"
+	"github.com/chubaofs/chubaofs/util/log"
 )
 
 // Packet defines a wrapper of the packet in proto.
@@ -41,6 +43,10 @@ func (p *Packet) String() string {
 
 // NewWritePacket returns a new write packet.
 func NewWritePacket(inode uint64, fileOffset, storeMode int) *Packet {
+	start := time.Now()
+	defer func() {
+		log.LogErrorf("NewWritePacket costs %v", time.Since(start))
+	}()
 	p := new(Packet)
 	p.ReqID = proto.GenerateRequestID()
 	p.Magic = proto.ProtoMagic

@@ -150,7 +150,7 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 
 	d.super.ic.Put(info)
 	child := NewFile(d.super, info)
-	d.super.ec.OpenStream(info.Inode)
+	d.super.ec.OpenStream(info.Inode, true)
 
 	d.super.fslock.Lock()
 	d.super.nodeCache[info.Inode] = child

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"golang.org/x/net/context"
 
@@ -41,6 +42,9 @@ type Streamer struct {
 
 	extents *ExtentCache
 	once    sync.Once
+
+	newStreamer bool
+	createTime  time.Time
 
 	handler   *ExtentHandler   // current open handler
 	dirtylist *DirtyExtentList // dirty handlers
@@ -113,6 +117,29 @@ func NewStreamer(client *ExtentClient, inode uint64) *Streamer {
 	go s.owServer()
 	go s.server()
 	return s
+}
+
+func (s *Streamer) SetNewlyCreatedStreamer() {
+	// no need to set newStreamer as false explicitly
+	// the ShouldGetExtents is only checked in Streamer.once.Do, so it is only
+	// work once
+	s.newStreamer = true
+	s.createTime = time.Now()
+}
+
+func (s *Streamer) ShouldGetExtents() bool {
+	s.writeLock.Lock()
+	defer s.writeLock.Unlock()
+
+	if !s.newStreamer {
+		return true
+	}
+	now := time.Now()
+	if now.Sub(s.createTime) > time.Minute {
+		s.newStreamer = false
+		return true
+	}
+	return false
 }
 
 // String returns the string format of the streamer.

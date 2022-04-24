@@ -121,7 +121,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 	ino := f.info.Inode
 	start := time.Now()
 
-	f.super.ec.OpenStream(ino)
+	f.super.ec.OpenStream(ino, false)
 
 	if f.super.strictConsistence {
 		f.super.ec.RefreshExtentsCache(ino)
@@ -236,6 +236,7 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	defer func() {
 		metric.SetWithLabels(err, map[string]string{exporter.Vol: f.super.volname})
 	}()
+	log.LogErrorf("Write: NewTPCnt costs %v", time.Since(start))
 
 	size, err := f.super.ec.Write(ino, int(req.Offset), req.Data, flags)
 	if err != nil {
