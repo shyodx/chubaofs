@@ -45,6 +45,7 @@ func NewBufferPool() (bufferP *BufferPool) {
 	bufferP.pools[1] = make(chan []byte, HeaderBufferPoolSize)
 	bufferP.pools[2] = make(chan []byte, RepairBufferPollSize)
 	bufferP.tinyPool = NewTinyBufferPool()
+	bufferP.PreloadTinyBufferPool(10)
 	return bufferP
 }
 
@@ -97,4 +98,13 @@ func (bufferP *BufferPool) Put(data []byte) {
 		atomic.AddInt64(&tinyBuffersCount, -1)
 	}
 	return
+}
+
+func (bufferP *BufferPool) PreloadTinyBufferPool(nr int) {
+	for i := 0; i < nr; i++ {
+		data, err := bufferP.Get(util.DefaultTinySizeLimit)
+		if err == nil {
+			bufferP.Put(data)
+		}
+	}
 }
