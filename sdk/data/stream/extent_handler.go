@@ -17,6 +17,7 @@ package stream
 import (
 	"fmt"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -106,6 +107,8 @@ type ExtentHandler struct {
 
 	// Signaled in receiver ONLY to exit *sender*.
 	doneSender chan struct{}
+
+	tinyFlush sync.Mutex
 }
 
 // NewExtentHandler returns a new extent handler.
@@ -376,16 +379,18 @@ func (eh *ExtentHandler) processReplyError(packet *Packet, errmsg string) {
 }
 
 func (eh *ExtentHandler) flush() (err error) {
+	if eh.storeMode == proto.TinyExtentType {
+		eh.tinyFlush.Lock()
+	}
 	eh.flushPacket()
 	eh.waitForFlush()
+	if eh.storeMode == proto.TinyExtentType {
+		eh.tinyFlush.Unlock()
+	}
 
 	err = eh.appendExtentKey()
 	if err != nil {
 		return
-	}
-
-	if eh.storeMode == proto.TinyExtentType {
-		eh.setClosed()
 	}
 
 	status := eh.getStatus()
@@ -618,6 +623,12 @@ func (eh *ExtentHandler) flushPacket() {
 		return
 	}
 
+	if eh.storeMode == proto.TinyExtentType {
+		// set eh as closed before really writing to datanode.
+		// Because if tiny extent is wrotten, the eh can never
+		// be used again.
+		eh.setClosed()
+	}
 	eh.pushToRequest(eh.packet)
 	eh.packet = nil
 }

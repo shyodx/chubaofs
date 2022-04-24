@@ -283,13 +283,13 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 		offset = filesize
 	}
 
-	log.LogDebugf("Streamer write enter: ino(%v) offset(%v) size(%v)", s.inode, offset, size)
+	log.LogErrorf("Streamer write enter: ino(%v) offset(%v) size(%v)", s.inode, offset, size)
 
 	ctx := context.Background()
 	s.client.writeLimiter.Wait(ctx)
 
 	requests := s.extents.PrepareWriteRequests(offset, size, data)
-	log.LogDebugf("Streamer write: ino(%v) prepared requests(%v)", s.inode, requests)
+	log.LogErrorf("Streamer write: ino(%v) prepared requests(%v)", s.inode, requests)
 
 	for _, req := range requests {
 		var writeSize int
@@ -306,9 +306,9 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 	}
 	if filesize, _ := s.extents.Size(); offset+total > filesize {
 		s.extents.SetSize(uint64(offset+total), false)
-		log.LogDebugf("Streamer write: ino(%v) filesize changed to (%v)", s.inode, offset+total)
+		log.LogErrorf("Streamer write: ino(%v) filesize changed to (%v)", s.inode, offset+total)
 	}
-	log.LogDebugf("Streamer write exit: ino(%v) offset(%v) size(%v) done total(%v) err(%v)", s.inode, offset, size, total, err)
+	log.LogErrorf("Streamer write exit: ino(%v) offset(%v) size(%v) done total(%v) err(%v)", s.inode, offset, size, total, err)
 	return
 }
 
@@ -340,8 +340,9 @@ func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool) (total int, err 
 
 func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total int, err error) {
 	var (
-		ek        *proto.ExtentKey
-		storeMode int
+		ek               *proto.ExtentKey
+		storeMode        int
+		storeModeChanged bool
 	)
 
 	// Small files are usually written in a single write, so use tiny extent
@@ -352,7 +353,7 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 		storeMode = proto.TinyExtentType
 	}
 
-	log.LogDebugf("doWrite enter: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
+	log.LogErrorf("doWrite enter: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
 
 	if s.handler == nil && storeMode == proto.NormalExtentType {
 		if currentEK := s.extents.GetEnd(uint64(offset)); currentEK != nil && !storage.IsTinyExtent(currentEK.ExtentId) {
@@ -374,12 +375,43 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 			s.handler = NewExtentHandler(s, offset, storeMode, 0)
 			s.dirty = false
 		} else if s.handler.storeMode != storeMode {
-			// store mode changed, so close open handler and start a new one
-			s.closeOpenHandler()
-			continue
+			// s.handler.storeMode must be TinyExtentType and storeMode must be NormalExtentType
+			if s.handler.storeMode != proto.TinyExtentType || storeMode != proto.NormalExtentType {
+				panic(fmt.Sprintf("eh(%v) ino(%v) offset(%v) size(%v) storeMode(%v)", s.handler, s.inode, offset, size, storeMode))
+			}
+			// make sure there is writeback during write data to eh
+			s.handler.tinyFlush.Lock()
+			if s.handler.getStatus() != ExtentStatusOpen {
+				s.handler.tinyFlush.Unlock()
+				// store mode changed, so close open handler and start a new one
+				log.LogErrorf("doWrite create new eh: storeMode %v:%v", s.handler.storeMode, storeMode)
+				s.closeOpenHandler()
+				continue
+			}
+
+			// the tiny extent handler is not wroten back yet, try
+			// to keep caching new data in it. write() will ensure
+			// the new write request is continous and does not
+			// exceeds tiny extent block size.
+			//if s.handler.fileOffset+s.handler.size == offset && s.handler.size+size <= s.handler.stream.tinySizeLimit() {
+			//	storeMode = proto.TinyExtentType
+			//	// tiny extent handler is not continous or its
+			//	// left space is not enough, so close it and
+			//	// start a new one
+			//	log.LogErrorf("doWrite create new eh: storeMode %v:%v", s.handler.storeMode, storeMode)
+			//	s.closeOpenHandler()
+			//	continue
+			//} else {
+			log.LogErrorf("doWrite change storeMode to TinyExtentType and use old eh: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
+			storeMode = proto.TinyExtentType
+			storeModeChanged = true
+			//}
 		}
 
 		ek, err = s.handler.write(data, offset, size, direct)
+		if storeModeChanged {
+			s.handler.tinyFlush.Unlock()
+		}
 		if err == nil && ek != nil {
 			if !s.dirty {
 				s.dirtylist.Put(s.handler)
