@@ -31,11 +31,7 @@ services:
             - datanode2
             - datanode3
             - datanode4
-            - objectnode1
-            - objectnode2
-            - objectnode3
-            - console1
-            - nginx
+            #- nginx
         networks:
             extnetwork:
 
@@ -55,7 +51,7 @@ services:
             - ./conf/master1.json:/root/master.json:ro
             - ./script/start_master.sh:/cfs/script/start.sh
         command: /bin/sh /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -77,7 +73,7 @@ services:
             - ./conf/master2.json:/root/master.json:ro
             - ./script/start_master.sh:/cfs/script/start.sh
         command: /bin/sh /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -98,7 +94,7 @@ services:
             - ./conf/master3.json:/root/master.json:ro
             - ./script/start_master.sh:/cfs/script/start.sh
         command: /bin/sh /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -119,7 +115,7 @@ services:
             - ./conf/metanode.json:/cfs/conf/metanode.json
             - ./script/start_meta.sh:/cfs/script/start.sh
         command: /bin/bash /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -140,7 +136,7 @@ services:
             - ./conf/metanode.json:/cfs/conf/metanode.json
             - ./script/start_meta.sh:/cfs/script/start.sh
         command: /bin/bash /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -161,7 +157,7 @@ services:
             - ./conf/metanode.json:/cfs/conf/metanode.json
             - ./script/start_meta.sh:/cfs/script/start.sh
         command: /bin/bash /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -182,7 +178,7 @@ services:
             - ./conf/metanode.json:/cfs/conf/metanode.json
             - ./script/start_meta.sh:/cfs/script/start.sh
         command: /bin/bash /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -203,7 +199,7 @@ services:
             - ./conf/datanode.json:/cfs/conf/datanode.json
             - ./script/start_datanode.sh:/cfs/script/start.sh
         command: /bin/bash /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -224,7 +220,7 @@ services:
             - ./conf/datanode.json:/cfs/conf/datanode.json
             - ./script/start_datanode.sh:/cfs/script/start.sh
         command: /bin/sh /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -245,7 +241,7 @@ services:
             - ./conf/datanode.json:/cfs/conf/datanode.json
             - ./script/start_datanode.sh:/cfs/script/start.sh
         command: /bin/sh /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -266,7 +262,7 @@ services:
             - ./conf/datanode.json:/cfs/conf/datanode.json
             - ./script/start_datanode.sh:/cfs/script/start.sh
         command: /bin/sh /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
@@ -284,7 +280,7 @@ services:
             - ./conf/objectnode.json:/root/objectnode.json:ro
             - ./script/start_objectnode.sh:/cfs/script/start.sh
         command: /bin/bash /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         environment:
           - TZ=Asia/Shanghai
@@ -304,7 +300,7 @@ services:
             - ./conf/objectnode.json:/root/objectnode.json:ro
             - ./script/start_objectnode.sh:/cfs/script/start.sh
         command: /bin/bash /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         environment:
           - TZ=Asia/Shanghai
@@ -324,7 +320,7 @@ services:
             - ./conf/objectnode.json:/root/objectnode.json:ro
             - ./script/start_objectnode.sh:/cfs/script/start.sh
         command: /bin/bash /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         environment:
           - TZ=Asia/Shanghai
@@ -343,7 +339,7 @@ services:
           - ./conf/console.json:/cfs/conf/console.json
           - ./script/start_console.sh:/cfs/script/start.sh
         command: /bin/sh /cfs/script/start.sh
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
           extnetwork:
@@ -417,7 +413,7 @@ services:
         volumes:
             - ./conf/nginx.conf:/etc/nginx/nginx.conf:ro
         command: /bin/bash -c "nginx -g 'daemon off;'"
-        restart: on-failure
+        restart: "no"
         privileged: true
         networks:
             extnetwork:
