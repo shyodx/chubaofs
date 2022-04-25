@@ -92,8 +92,10 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 // Forget evicts the inode of the current file. This can only happen when the inode is on the orphan list.
 func (f *File) Forget() {
 	ino := f.info.Inode
+	log.LogErrorf("TRACE Forget enter: ino(%v)", ino)
+	start := time.Now()
 	defer func() {
-		log.LogDebugf("TRACE Forget: ino(%v)", ino)
+		log.LogErrorf("TRACE Forget: ino(%v) (%v)ns", ino, time.Since(start).Nanoseconds())
 	}()
 
 	f.super.ic.Delete(ino)
@@ -139,7 +141,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 // Release handles the release request.
 func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error) {
 	ino := f.info.Inode
-	log.LogDebugf("TRACE Release enter: ino(%v) req(%v)", ino, req)
+	log.LogErrorf("TRACE Release enter: ino(%v) req(%v)", ino, req)
 
 	start := time.Now()
 
@@ -153,7 +155,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error
 
 	f.super.ic.Delete(ino)
 	elapsed := time.Since(start)
-	log.LogDebugf("TRACE Release: ino(%v) req(%v) (%v)ns", ino, req, elapsed.Nanoseconds())
+	log.LogErrorf("TRACE Release: ino(%v) req(%v) (%v)ns", ino, req, elapsed.Nanoseconds())
 	return nil
 }
 
@@ -269,7 +271,7 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) (err error) {
 	if !f.super.fsyncOnClose {
 		return fuse.ENOSYS
 	}
-	log.LogDebugf("TRACE Flush enter: ino(%v)", f.info.Inode)
+	log.LogErrorf("TRACE Flush enter: ino(%v)", f.info.Inode)
 	start := time.Now()
 
 	metric := exporter.NewTPCnt("filesync")
@@ -285,7 +287,7 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) (err error) {
 	}
 	f.super.ic.Delete(f.info.Inode)
 	elapsed := time.Since(start)
-	log.LogDebugf("TRACE Flush: ino(%v) (%v)ns", f.info.Inode, elapsed.Nanoseconds())
+	log.LogErrorf("TRACE Flush: ino(%v) (%v)ns", f.info.Inode, elapsed.Nanoseconds())
 	return nil
 }
 
