@@ -41,6 +41,8 @@ const (
 
 const (
 	StreamerNormal int32 = iota
+	StreamerClosed
+	StreamerClean
 	StreamerError
 )
 
@@ -560,7 +562,7 @@ func (s *Streamer) open() {
 func (s *Streamer) release() error {
 	s.refcnt--
 	if s.refcnt > 0 || s.client.noFlushOnClose {
-		log.LogDebugf("release without flush: streamer(%v) refcnt(%v)", s, s.refcnt)
+		log.LogErrorf("release without flush: streamer(%v) refcnt(%v)", s, s.refcnt)
 		return nil
 	}
 	s.closeOpenHandler()
@@ -568,7 +570,7 @@ func (s *Streamer) release() error {
 	if err != nil {
 		s.abort()
 	}
-	log.LogDebugf("release: streamer(%v) refcnt(%v)", s, s.refcnt)
+	log.LogErrorf("release: streamer(%v) refcnt(%v)", s, s.refcnt)
 	return err
 }
 
@@ -582,6 +584,7 @@ func (s *Streamer) evict() error {
 	s.client.streamerLock.Unlock()
 
 	if s.client.noFlushOnClose {
+		log.LogErrorf("evict: streamer(%v) flush", s)
 		s.closeOpenHandler()
 		err := s.flush()
 		if err != nil {

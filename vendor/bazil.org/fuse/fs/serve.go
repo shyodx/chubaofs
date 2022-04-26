@@ -941,6 +941,7 @@ func (s *Server) Serve(fs FS) error {
 			}
 			return err
 		}
+		fmt.Printf("ReadRequest: %v\n", req)
 
 		switch req.(type) {
 		case *fuse.ForgetRequest:

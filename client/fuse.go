@@ -394,6 +394,7 @@ func main() {
 		syslog.Printf("fs Serve returns err(%v)", err)
 		os.Exit(1)
 	}
+	killsuper(super)
 
 	<-fsConn.Ready
 	if fsConn.MountError != nil {
@@ -555,6 +556,10 @@ func mount(opt *proto.MountOptions) (fsConn *fuse.Conn, super *cfs.Super, err er
 
 	fsConn, err = fuse.Mount(opt.MountPoint, opt.NeedRestoreFuse, options...)
 	return
+}
+
+func killsuper(super *cfs.Super) {
+	super.Shutdown()
 }
 
 func registerInterceptedSignal(mnt string) {

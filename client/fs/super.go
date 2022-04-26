@@ -339,3 +339,7 @@ func (s *Super) Notify(stat fs.FSStatType, msg interface{}) {
 		s.fslock.Unlock()
 	}
 }
+
+func (s *Super) Shutdown() {
+	s.ec.Close()
+}

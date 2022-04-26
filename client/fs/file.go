@@ -268,11 +268,13 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 
 // Flush only when fsyncOnClose is enabled.
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) (err error) {
-	if !f.super.fsyncOnClose {
-		return fuse.ENOSYS
-	}
 	log.LogErrorf("TRACE Flush enter: ino(%v)", f.info.Inode)
 	start := time.Now()
+	if !f.super.fsyncOnClose {
+		log.LogErrorf("TRACE Flush: ino(%v) fsyncOnClose is false", f.info.Inode)
+		//return fuse.ENOSYS
+		return nil
+	}
 
 	metric := exporter.NewTPCnt("filesync")
 	defer func() {
@@ -311,7 +313,9 @@ func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) (err error) {
 func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
 	ino := f.info.Inode
 	start := time.Now()
+	log.LogErrorf("TRACE Setattr start: ino(%v) req(%v)", ino, req)
 	if req.Valid.Size() {
+		log.LogErrorf("Change size: %v -> %v", f.info.Size, req.Size)
 		if err := f.super.ec.Flush(ino); err != nil {
 			log.LogErrorf("Setattr: truncate wait for flush ino(%v) size(%v) err(%v)", ino, req.Size, err)
 			return ParseError(err)
@@ -348,7 +352,7 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 	fillAttr(info, &resp.Attr)
 
 	elapsed := time.Since(start)
-	log.LogDebugf("TRACE Setattr: ino(%v) req(%v) (%v)ns", ino, req, elapsed.Nanoseconds())
+	log.LogErrorf("TRACE Setattr: ino(%v) req(%v) (%v)ns", ino, req, elapsed.Nanoseconds())
 	return nil
 }
 

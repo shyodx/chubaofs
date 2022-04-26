@@ -17,6 +17,7 @@ package stream
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -95,6 +96,7 @@ type ExtentConfig struct {
 type ExtentClient struct {
 	noFlushOnClose bool
 
+	stopWbC      chan struct{}
 	streamers    map[uint64]*Streamer
 	streamerLock sync.Mutex
 
@@ -149,6 +151,11 @@ retry:
 	client.readLimiter = rate.NewLimiter(readLimit, defaultReadLimitBurst)
 	client.writeLimiter = rate.NewLimiter(writeLimit, defaultWriteLimitBurst)
 
+	if client.noFlushOnClose {
+		client.stopWbC = make(chan struct{})
+		go client.WritebackStreams()
+	}
+
 	return
 }
 
@@ -162,7 +169,13 @@ func (client *ExtentClient) OpenStream(inode uint64, newly bool) error {
 			s.SetNewlyCreatedStreamer()
 		}
 		client.streamers[inode] = s
+	} else {
+		// lock stream to avoid race between WritebackStreams and open
+		s.writeLock.Lock()
+		defer s.writeLock.Unlock()
 	}
+	// If status is StreamerError or StreamerNormal, status is not changed
+	atomic.CompareAndSwapInt32(&s.status, StreamerClosed, StreamerNormal)
 	if client.noFlushOnClose {
 		s.IssueOpenRequest()
 		return nil
@@ -178,7 +191,13 @@ func (client *ExtentClient) openGetStream(inode uint64) (s *Streamer) {
 	if !ok {
 		s = NewStreamer(client, inode)
 		client.streamers[inode] = s
+	} else {
+		// lock stream to avoid race between WritebackStreams and open
+		s.writeLock.Lock()
+		defer s.writeLock.Unlock()
 	}
+	// If status is StreamerError or StreamerNormal, status is not changed
+	atomic.CompareAndSwapInt32(&s.status, StreamerClosed, StreamerNormal)
 	client.streamerLock.Unlock()
 	return s
 }
@@ -191,6 +210,7 @@ func (client *ExtentClient) CloseStream(inode uint64) error {
 		client.streamerLock.Unlock()
 		return nil
 	}
+	atomic.CompareAndSwapInt32(&s.status, StreamerNormal, StreamerClosed)
 	if client.noFlushOnClose {
 		s.IssueReleaseRequest()
 		return nil
@@ -347,9 +367,13 @@ func setRate(lim *rate.Limiter, val int) string {
 
 func (client *ExtentClient) Close() error {
 	// release streamers
+	log.LogErrorf("Stop ExtentClient")
 	var inodes []uint64
 	client.streamerLock.Lock()
 	inodes = make([]uint64, 0, len(client.streamers))
+	if client.noFlushOnClose {
+		close(client.stopWbC)
+	}
 	for inode := range client.streamers {
 		inodes = append(inodes, inode)
 	}
@@ -359,4 +383,44 @@ func (client *ExtentClient) Close() error {
 	}
 	client.dataWrapper.Stop()
 	return nil
+}
+
+func (client *ExtentClient) WritebackStreams() {
+	ticker := time.NewTicker(10 * time.Second)
+
+	for {
+		select {
+		case <-ticker.C:
+			var (
+				s     *Streamer
+				found bool
+			)
+
+			client.streamerLock.Lock()
+			for _, s = range client.streamers {
+				if atomic.LoadInt32(&s.status) == StreamerClosed {
+					s.writeLock.Lock()
+					found = true
+					break
+				}
+			}
+			client.streamerLock.Unlock()
+
+			if !found {
+				continue
+			}
+
+			if atomic.LoadInt32(&s.status) == StreamerClosed {
+				log.LogErrorf("Writeback flush stream(%v)", s)
+				if err := s.IssueFlushRequest(); err != nil {
+					log.LogErrorf("Writeback stream stream(%v) fail: %v", s, err)
+				}
+				atomic.CompareAndSwapInt32(&s.status, StreamerClosed, StreamerClean)
+			}
+			s.writeLock.Unlock()
+		case <-client.stopWbC:
+			ticker.Stop()
+			break
+		}
+	}
 }
