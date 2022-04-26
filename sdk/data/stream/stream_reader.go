@@ -18,11 +18,13 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/context"
 
 	"github.com/chubaofs/chubaofs/proto"
+	"github.com/chubaofs/chubaofs/util"
 	"github.com/chubaofs/chubaofs/util/log"
 	"github.com/gammazero/workerpool"
 )
@@ -163,12 +165,73 @@ func (s *Streamer) GetExtentReader(ek *proto.ExtentKey) (*ExtentReader, error) {
 	return reader, nil
 }
 
+func (s *Streamer) readExtentParellel(
+	wg *sync.WaitGroup,
+	lastone bool,
+	req *ExtentRequest,
+	rsizep *int64,
+	retCh chan error) {
+	var (
+		reader    *ExtentReader
+		readBytes int
+		err       error
+	)
+
+	defer func() {
+		if err != nil && err != io.EOF {
+			log.LogErrorf("Stream read: ino(%v) req(%v) readBytes(%v) err(%v)", s.inode, req, readBytes, err)
+		}
+		wg.Done()
+	}()
+
+	if req.ExtentKey == nil {
+		for i := range req.Data {
+			// FIXME: need fill zero? or req.Data is already all zero?
+			req.Data[i] = 0
+		}
+
+		filesize, _ := s.extents.Size()
+		if req.FileOffset+req.Size > filesize {
+			if req.FileOffset > filesize {
+				return
+			}
+			req.Size = filesize - req.FileOffset
+			atomic.AddInt64(rsizep, int64(req.Size))
+			retCh <- io.EOF
+			return
+		}
+
+		// Reading a hole, just fill zero
+		atomic.AddInt64(rsizep, int64(req.Size))
+		log.LogDebugf("Stream read hole: ino(%v) req(%v) total(%v)", s.inode, req, *rsizep)
+	} else {
+		reader, err = s.GetExtentReader(req.ExtentKey)
+		if err != nil {
+			retCh <- err
+			return
+		}
+		readBytes, err = reader.Read(req)
+		log.LogDebugf("Stream read: ino(%v) req(%v) readBytes(%v) err(%v)", s.inode, req, readBytes, err)
+		atomic.AddInt64(rsizep, int64(readBytes))
+		if err != nil {
+			retCh <- err
+			return
+		}
+		if readBytes < req.Size {
+			if !lastone {
+				panic(fmt.Sprintf("Stream read: ino(%v) req(%v) readBytes(%v) err(%v)", s.inode, req, readBytes, err))
+			}
+		}
+	}
+	return
+}
+
 func (s *Streamer) read(data []byte, offset int, size int) (total int, err error) {
 	var (
-		readBytes       int
-		reader          *ExtentReader
 		requests        []*ExtentRequest
 		revisedRequests []*ExtentRequest
+		wg              sync.WaitGroup
+		rsize           int64
 	)
 
 	ctx := context.Background()
@@ -197,43 +260,24 @@ func (s *Streamer) read(data []byte, offset int, size int) (total int, err error
 
 	filesize, _ := s.extents.Size()
 	log.LogDebugf("read: ino(%v) requests(%v) filesize(%v)", s.inode, requests, filesize)
-	for _, req := range requests {
-		if req.ExtentKey == nil {
-			for i := range req.Data {
-				req.Data[i] = 0
-			}
-
-			if req.FileOffset+req.Size > filesize {
-				if req.FileOffset > filesize {
-					return
-				}
-				req.Size = filesize - req.FileOffset
-				total += req.Size
-				err = io.EOF
-				//if total == 0 {
-				//	log.LogErrorf("read: ino(%v) req(%v) filesize(%v)", s.inode, req, filesize)
-				//}
-				return
-			}
-
-			// Reading a hole, just fill zero
-			total += req.Size
-			log.LogDebugf("Stream read hole: ino(%v) req(%v) total(%v)", s.inode, req, total)
-		} else {
-			reader, err = s.GetExtentReader(req.ExtentKey)
-			if err != nil {
-				break
-			}
-			readBytes, err = reader.Read(req)
-			log.LogDebugf("Stream read: ino(%v) req(%v) readBytes(%v) err(%v)", s.inode, req, readBytes, err)
-			total += readBytes
-			if err != nil || readBytes < req.Size {
-				if total == 0 {
-					log.LogErrorf("Stream read: ino(%v) req(%v) readBytes(%v) err(%v)", s.inode, req, readBytes, err)
-				}
+	log.LogErrorf("read: ino(%v) offs(%v) len(%v) requests size(%v) filesize(%v)", s.inode, offset, size, len(requests), filesize)
+	parellelLevel := util.Min(len(requests), 10)
+	retCh := make(chan error, parellelLevel)
+	for i, req := range requests {
+		if i == parellelLevel {
+			wg.Wait()
+		}
+		if len(retCh) != 0 {
+			err = <-retCh
+			if err != io.EOF {
 				break
 			}
 		}
+		wg.Add(1)
+		go s.readExtentParellel(&wg, i == len(requests), req, &rsize, retCh)
 	}
+	wg.Wait()
+
+	total = int(rsize)
 	return
 }
