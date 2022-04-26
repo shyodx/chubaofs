@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/chubaofs/chubaofs/proto"
 	"github.com/chubaofs/chubaofs/util"
@@ -136,6 +137,7 @@ func (m *metadataManager) opCreateMetaPartition(conn net.Conn, p *Packet,
 // Handle OpCreate inode.
 func (m *metadataManager) opCreateInode(conn net.Conn, p *Packet,
 	remoteAddr string) (err error) {
+	t1 := time.Now()
 	req := &CreateInoReq{}
 	if err = json.Unmarshal(p.Data, req); err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
@@ -153,11 +155,15 @@ func (m *metadataManager) opCreateInode(conn net.Conn, p *Packet,
 	if !m.serveProxy(conn, mp, p) {
 		return
 	}
+	t2 := time.Now()
 	err = mp.CreateInode(req, p)
 	// reply the operation result to the client through TCP
+	t3 := time.Now()
 	m.respondToClient(conn, p)
-	log.LogDebugf("%s [opCreateInode] req: %d - %v, resp: %v, body: %s",
-		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data)
+	t4 := time.Now()
+	log.LogErrorf("%s [opCreateInode] req: %d - %v, resp: %v, body: %s prepare:(%v)ns create:(%v)ns resp:(%v)ns",
+		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data,
+		t2.Sub(t1).Nanoseconds(), t3.Sub(t2).Nanoseconds(), t4.Sub(t3).Nanoseconds())
 	return
 }
 
@@ -207,6 +213,7 @@ func (m *metadataManager) opFreeInodeOnRaftFollower(conn net.Conn, p *Packet,
 // Handle OpCreate
 func (m *metadataManager) opCreateDentry(conn net.Conn, p *Packet,
 	remoteAddr string) (err error) {
+	t1 := time.Now()
 	req := &CreateDentryReq{}
 	if err = json.Unmarshal(p.Data, req); err != nil {
 		p.PacketErrorWithBody(proto.OpErr, ([]byte)(err.Error()))
@@ -224,10 +231,14 @@ func (m *metadataManager) opCreateDentry(conn net.Conn, p *Packet,
 	if !m.serveProxy(conn, mp, p) {
 		return
 	}
+	t2 := time.Now()
 	err = mp.CreateDentry(req, p)
+	t3 := time.Now()
 	m.respondToClient(conn, p)
-	log.LogDebugf("%s [opCreateDentry] req: %d - %v, resp: %v, body: %s",
-		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data)
+	t4 := time.Now()
+	log.LogErrorf("%s [opCreateDentry] req: %d - %v, resp: %v, body: %s parepare:(%v)ns, create:(%v)ns, resp:(%v)ns",
+		remoteAddr, p.GetReqID(), req, p.GetResultMsg(), p.Data,
+		t2.Sub(t1).Nanoseconds(), t3.Sub(t2).Nanoseconds(), t4.Sub(t3).Nanoseconds())
 	return
 }
 
