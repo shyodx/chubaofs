@@ -124,10 +124,6 @@ const (
 )
 
 var (
-	exporterKey string
-)
-
-var (
 	ErrNoLeader   = errors.New("no leader")
 	ErrNotALeader = errors.New("not a leader")
 )

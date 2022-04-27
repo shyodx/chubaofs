@@ -47,10 +47,12 @@ func (mw *MetaWrapper) icreate(mp *MetaPartition, mode, uid, gid uint32, target 
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -95,10 +97,12 @@ func (mw *MetaWrapper) iunlink(mp *MetaPartition, inode uint64) (status int, inf
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -139,10 +143,12 @@ func (mw *MetaWrapper) ievict(mp *MetaPartition, inode uint64) (status int, err 
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -183,10 +189,12 @@ func (mw *MetaWrapper) dcreate(mp *MetaPartition, parentID uint64, name string, 
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -226,10 +234,12 @@ func (mw *MetaWrapper) dupdate(mp *MetaPartition, parentID uint64, name string, 
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -270,10 +280,12 @@ func (mw *MetaWrapper) ddelete(mp *MetaPartition, parentID uint64, name string) 
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -315,10 +327,12 @@ func (mw *MetaWrapper) lookup(mp *MetaPartition, parentID uint64, name string) (
 
 	log.LogDebugf("lookup enter: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -362,10 +376,12 @@ func (mw *MetaWrapper) iget(mp *MetaPartition, inode uint64) (status int, info *
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -407,10 +423,12 @@ func (mw *MetaWrapper) batchIget(wg *sync.WaitGroup, mp *MetaPartition, inodes [
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -457,10 +475,12 @@ func (mw *MetaWrapper) readdir(mp *MetaPartition, parentID uint64) (status int, 
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -504,10 +524,12 @@ func (mw *MetaWrapper) readdirlimit(mp *MetaPartition, parentID uint64, from str
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -550,10 +572,12 @@ func (mw *MetaWrapper) appendExtentKey(mp *MetaPartition, inode uint64, extent p
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -584,10 +608,12 @@ func (mw *MetaWrapper) getExtents(mp *MetaPartition, inode uint64) (status int, 
 		return
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -630,10 +656,12 @@ func (mw *MetaWrapper) truncate(mp *MetaPartition, inode, size uint64) (status i
 
 	log.LogDebugf("truncate enter: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -669,10 +697,12 @@ func (mw *MetaWrapper) ilink(mp *MetaPartition, inode uint64) (status int, info 
 
 	log.LogDebugf("ilink enter: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -725,10 +755,12 @@ func (mw *MetaWrapper) setattr(mp *MetaPartition, inode uint64, valid, mode, uid
 
 	log.LogDebugf("setattr enter: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -765,10 +797,12 @@ func (mw *MetaWrapper) createMultipart(mp *MetaPartition, path string, extend ma
 
 	log.LogDebugf("createMultipart enter: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -810,10 +844,12 @@ func (mw *MetaWrapper) getMultipart(mp *MetaPartition, path, multipartId string)
 
 	log.LogDebugf("getMultipart enter: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -863,10 +899,12 @@ func (mw *MetaWrapper) addMultipartPart(mp *MetaPartition, path, multipartId str
 	}
 
 	log.LogDebugf("addMultipartPart entry: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -898,10 +936,12 @@ func (mw *MetaWrapper) idelete(mp *MetaPartition, inode uint64) (status int, err
 	}
 	log.LogDebugf("delete inode: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -935,10 +975,12 @@ func (mw *MetaWrapper) removeMultipart(mp *MetaPartition, path, multipartId stri
 	}
 	log.LogDebugf("delete session: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -973,10 +1015,12 @@ func (mw *MetaWrapper) appendExtentKeys(mp *MetaPartition, inode uint64, extents
 	}
 	log.LogDebugf("appendExtentKeys: batch append extent: packet(%v) mp(%v) req(%v)", packet, mp, *req)
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -1013,10 +1057,12 @@ func (mw *MetaWrapper) setXAttr(mp *MetaPartition, inode uint64, name []byte, va
 	}
 	log.LogDebugf("setXAttr: packet(%v) mp(%v) req(%v) err(%v)", packet, mp, *req, err)
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -1053,10 +1099,12 @@ func (mw *MetaWrapper) getXAttr(mp *MetaPartition, inode uint64, name string) (v
 	}
 	log.LogDebugf("get xattr: packet(%v) mp(%v) req(%v) err(%v)", packet, mp, *req, err)
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -1098,10 +1146,12 @@ func (mw *MetaWrapper) removeXAttr(mp *MetaPartition, inode uint64, name string)
 	}
 	log.LogDebugf("remove xattr: packet(%v) mp(%v) req(%v) err(%v)", packet, mp, *req, err)
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	if packet, err = mw.sendToMetaPartition(mp, packet); err != nil {
 		log.LogErrorf("remove xattr: packet(%v) mp(%v) req(%v) err(%v)", packet, mp, *req, err)
@@ -1134,10 +1184,12 @@ func (mw *MetaWrapper) listXAttr(mp *MetaPartition, inode uint64) (keys []string
 	}
 	log.LogDebugf("list xattr: packet(%v) mp(%v) req(%v) err(%v)", packet, mp, *req, err)
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	if packet, err = mw.sendToMetaPartition(mp, packet); err != nil {
 		log.LogErrorf("list xattr: packet(%v) mp(%v) req(%v) err(%v)", packet, mp, *req, err)
@@ -1183,10 +1235,12 @@ func (mw *MetaWrapper) listMultiparts(mp *MetaPartition, prefix, delimiter, keyM
 	}
 
 	log.LogDebugf("listMultiparts enter: packet(%v) mp(%v) req(%v)", packet, mp, string(packet.Data))
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {
@@ -1228,10 +1282,12 @@ func (mw *MetaWrapper) batchGetXAttr(mp *MetaPartition, inodes []uint64, keys []
 		return nil, err
 	}
 
-	metric := exporter.NewTPCnt(packet.GetOpMsg())
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt(packet.GetOpMsg())
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: mw.volname})
+		}()
+	}
 
 	packet, err = mw.sendToMetaPartition(mp, packet)
 	if err != nil {

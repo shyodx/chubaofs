@@ -15,7 +15,6 @@
 package meta
 
 import (
-	"fmt"
 	"sync"
 	"syscall"
 	"time"
@@ -245,10 +244,6 @@ func (mw *MetaWrapper) Cluster() string {
 
 func (mw *MetaWrapper) LocalIP() string {
 	return mw.localIP
-}
-
-func (mw *MetaWrapper) exporterKey(act string) string {
-	return fmt.Sprintf("%s_sdk_meta_%s", mw.cluster, act)
 }
 
 // Proto ResultCode to status

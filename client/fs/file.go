@@ -165,10 +165,12 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 
 	start := time.Now()
 
-	metric := exporter.NewTPCnt("fileread")
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: f.super.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt("fileread")
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: f.super.volname})
+		}()
+	}
 
 	size, err := f.super.ec.Read(f.info.Inode, resp.Data[fuse.OutHeaderSize:], int(req.Offset), req.Size)
 	if err != nil && err != io.EOF {
@@ -234,11 +236,13 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 
 	start := time.Now()
 
-	metric := exporter.NewTPCnt("filewrite")
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: f.super.volname})
-	}()
-	log.LogErrorf("Write: NewTPCnt costs %v", time.Since(start))
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt("filewrite")
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: f.super.volname})
+		}()
+		log.LogErrorf("Write: NewTPCnt costs %v", time.Since(start))
+	}
 
 	size, err := f.super.ec.Write(ino, int(req.Offset), req.Data, flags)
 	if err != nil {
@@ -276,10 +280,12 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) (err error) {
 		return nil
 	}
 
-	metric := exporter.NewTPCnt("filesync")
-	defer func() {
-		metric.SetWithLabels(err, map[string]string{exporter.Vol: f.super.volname})
-	}()
+	if exporter.TPCntEnabled() {
+		metric := exporter.NewTPCnt("filesync")
+		defer func() {
+			metric.SetWithLabels(err, map[string]string{exporter.Vol: f.super.volname})
+		}()
+	}
 
 	err = f.super.ec.Flush(f.info.Inode)
 	if err != nil {

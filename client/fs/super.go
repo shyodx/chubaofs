@@ -228,10 +228,6 @@ func (s *Super) SetRate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Super) exporterKey(act string) string {
-	return fmt.Sprintf("%v_fuseclient_%v", s.cluster, act)
-}
-
 func (s *Super) umpKey(act string) string {
 	return fmt.Sprintf("%v_fuseclient_%v", s.cluster, act)
 }

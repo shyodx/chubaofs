@@ -37,6 +37,7 @@ const (
 	ConfigKeyConsulMeta     = "consulMeta"     // consul meta
 	ConfigKeyIpFilter       = "ipFilter"       // add ip filter
 	ConfigKeyEnablePid      = "enablePid"      // enable report partition id
+	ConfigKeyEnableTPCnt    = "enableTPCnt"    // enable report timepoint count
 	ChSize                  = 1024 * 10        //collect chan size
 
 	// monitor label name
@@ -54,6 +55,7 @@ var (
 	exporterPort      int64
 	enabledPrometheus = false
 	EnablePid         = false
+	enableTPCnt       = true
 	replacer          = strings.NewReplacer("-", "_", ".", "_", " ", "_", ",", "_", ":", "_")
 )
 
@@ -68,6 +70,9 @@ func Init(role string, cfg *config.Config) {
 		log.LogInfof("%v exporter disabled", role)
 		return
 	}
+
+	enableTPCnt = cfg.GetBoolWithDefault(ConfigKeyEnableTPCnt, true)
+	log.LogInfo("enable report timepoint count? ", enableTPCnt)
 
 	EnablePid = cfg.GetBoolWithDefault(ConfigKeyEnablePid, false)
 	log.LogInfo("enable report partition id info? ", EnablePid)
@@ -155,4 +160,8 @@ func collect() {
 	go collectGauge()
 	go collectHistogram()
 	go collectAlarm()
+}
+
+func TPCntEnabled() bool {
+	return enableTPCnt
 }
