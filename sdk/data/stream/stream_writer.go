@@ -373,13 +373,18 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 	}
 
 	for i := 0; i < MaxNewHandlerRetry; i++ {
+		storeModeChanged = false
 		if s.handler == nil {
 			s.handler = NewExtentHandler(s, offset, storeMode, 0)
 			s.dirty = false
 		} else if s.handler.storeMode != storeMode {
 			// s.handler.storeMode must be TinyExtentType and storeMode must be NormalExtentType
 			if s.handler.storeMode != proto.TinyExtentType || storeMode != proto.NormalExtentType {
-				panic(fmt.Sprintf("eh(%v) ino(%v) offset(%v) size(%v) storeMode(%v)", s.handler, s.inode, offset, size, storeMode))
+				// overwrite?
+				log.LogErrorf("eh(%v) ino(%v) offset(%v) size(%v) storeMode(%v)", s.handler, s.inode, offset, size, storeMode)
+				log.LogErrorf("doWrite create new eh: storeMode %v:%v", s.handler.storeMode, storeMode)
+				s.closeOpenHandler()
+				continue
 			}
 			// make sure there is writeback during write data to eh
 			s.handler.tinyFlush.Lock()
