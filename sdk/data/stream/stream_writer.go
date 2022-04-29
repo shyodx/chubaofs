@@ -191,6 +191,9 @@ func (s *Streamer) server() {
 			log.LogDebugf("done server: evict, ino(%v)", s.inode)
 			return
 		case <-t.C:
+			if len(s.request) > 0 && len(s.request) < 100/*limit*/ {
+				continue
+			}
 			s.traverse()
 			if s.refcnt <= 0 {
 				s.client.streamerLock.Lock()
