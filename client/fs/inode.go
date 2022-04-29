@@ -49,31 +49,26 @@ func (s *Super) InodeGet(ino uint64) (*proto.InodeInfo, error) {
 
 func setattr(info *proto.InodeInfo, req *fuse.SetattrRequest) (valid uint32) {
 	if req.Valid.Mode() {
-		log.LogErrorf("Change mode %v -> %v", info.Mode, proto.Mode(req.Mode))
 		info.Mode = proto.Mode(req.Mode)
 		valid |= proto.AttrMode
 	}
 
 	if req.Valid.Uid() {
-		log.LogErrorf("Change uid %v -> %v", info.Uid, req.Uid)
 		info.Uid = req.Uid
 		valid |= proto.AttrUid
 	}
 
 	if req.Valid.Gid() {
-		log.LogErrorf("Change gid %v -> %v", info.Gid, req.Gid)
 		info.Gid = req.Gid
 		valid |= proto.AttrGid
 	}
 
 	if req.Valid.Atime() {
-		log.LogErrorf("Change atime %v -> %v", info.AccessTime, req.Atime)
 		info.AccessTime = req.Atime
 		valid |= proto.AttrAccessTime
 	}
 
 	if req.Valid.Mtime() {
-		log.LogErrorf("Change mtime %v -> %v", info.ModifyTime, req.Mtime)
 		info.ModifyTime = req.Mtime
 		valid |= proto.AttrModifyTime
 	}

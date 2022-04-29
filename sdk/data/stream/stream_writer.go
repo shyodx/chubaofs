@@ -114,7 +114,9 @@ func (s *Streamer) IssueWriteRequest(offset int, data []byte, flags int) (write 
 	}
 
 	s.writeLock.Lock()
+	start := time.Now()
 	request := writeRequestPool.Get().(*WriteRequest)
+	log.LogDebugf("IssueWriteRequest: ino(%v) get write request (%v)ns", s.inode, time.Since(start).Nanoseconds())
 	request.data = data
 	request.fileOffset = offset
 	request.size = len(data)
@@ -285,13 +287,14 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 		offset = filesize
 	}
 
-	log.LogErrorf("Streamer write enter: ino(%v) offset(%v) size(%v)", s.inode, offset, size)
+	start := time.Now()
+	log.LogDebugf("Streamer write enter: ino(%v) offset(%v) size(%v)", s.inode, offset, size)
 
 	ctx := context.Background()
 	s.client.writeLimiter.Wait(ctx)
 
 	requests := s.extents.PrepareWriteRequests(offset, size, data)
-	log.LogErrorf("Streamer write: ino(%v) prepared requests(%v)", s.inode, requests)
+	log.LogDebugf("Streamer write: ino(%v) prepared requests(%v)", s.inode, requests)
 
 	for _, req := range requests {
 		var writeSize int
@@ -308,9 +311,9 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 	}
 	if filesize, _ := s.extents.Size(); offset+total > filesize {
 		s.extents.SetSize(uint64(offset+total), false)
-		log.LogErrorf("Streamer write: ino(%v) filesize changed to (%v)", s.inode, offset+total)
+		log.LogDebugf("Streamer write: ino(%v) filesize changed to (%v)", s.inode, offset+total)
 	}
-	log.LogErrorf("Streamer write exit: ino(%v) offset(%v) size(%v) done total(%v) err(%v)", s.inode, offset, size, total, err)
+	log.LogDebugf("Streamer write exit: ino(%v) offset(%v) size(%v) done total(%v) (%v)ns err(%v)", s.inode, offset, size, total, time.Since(start).Nanoseconds(), err)
 	return
 }
 
@@ -355,7 +358,7 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 		storeMode = proto.TinyExtentType
 	}
 
-	log.LogErrorf("doWrite enter: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
+	log.LogDebugf("doWrite enter: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
 
 	if s.handler == nil && storeMode == proto.NormalExtentType {
 		if currentEK := s.extents.GetEnd(uint64(offset)); currentEK != nil && !storage.IsTinyExtent(currentEK.ExtentId) {
@@ -381,8 +384,8 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 			// s.handler.storeMode must be TinyExtentType and storeMode must be NormalExtentType
 			if s.handler.storeMode != proto.TinyExtentType || storeMode != proto.NormalExtentType {
 				// overwrite?
-				log.LogErrorf("eh(%v) ino(%v) offset(%v) size(%v) storeMode(%v)", s.handler, s.inode, offset, size, storeMode)
-				log.LogErrorf("doWrite create new eh: storeMode %v:%v", s.handler.storeMode, storeMode)
+				log.LogDebugf("eh(%v) ino(%v) offset(%v) size(%v) storeMode(%v)", s.handler, s.inode, offset, size, storeMode)
+				log.LogDebugf("doWrite create new eh: storeMode %v:%v", s.handler.storeMode, storeMode)
 				s.closeOpenHandler()
 				continue
 			}
@@ -391,7 +394,7 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 			if s.handler.getStatus() != ExtentStatusOpen {
 				s.handler.tinyFlush.Unlock()
 				// store mode changed, so close open handler and start a new one
-				log.LogErrorf("doWrite create new eh: storeMode %v:%v", s.handler.storeMode, storeMode)
+				log.LogDebugf("doWrite create new eh: storeMode %v:%v", s.handler.storeMode, storeMode)
 				s.closeOpenHandler()
 				continue
 			}
@@ -409,7 +412,7 @@ func (s *Streamer) doWrite(data []byte, offset, size int, direct bool) (total in
 			//	s.closeOpenHandler()
 			//	continue
 			//} else {
-			log.LogErrorf("doWrite change storeMode to TinyExtentType and use old eh: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
+			log.LogDebugf("doWrite change storeMode to TinyExtentType and use old eh: ino(%v) offset(%v) size(%v) storeMode(%v)", s.inode, offset, size, storeMode)
 			storeMode = proto.TinyExtentType
 			storeModeChanged = true
 			//}
@@ -567,7 +570,7 @@ func (s *Streamer) open() {
 func (s *Streamer) release() error {
 	s.refcnt--
 	if s.refcnt > 0 || s.client.noFlushOnClose {
-		log.LogErrorf("release without flush: streamer(%v) refcnt(%v)", s, s.refcnt)
+		log.LogDebugf("release without flush: streamer(%v) refcnt(%v)", s, s.refcnt)
 		return nil
 	}
 	s.closeOpenHandler()
@@ -575,7 +578,7 @@ func (s *Streamer) release() error {
 	if err != nil {
 		s.abort()
 	}
-	log.LogErrorf("release: streamer(%v) refcnt(%v)", s, s.refcnt)
+	log.LogDebugf("release: streamer(%v) refcnt(%v)", s, s.refcnt)
 	return err
 }
 
@@ -589,7 +592,7 @@ func (s *Streamer) evict() error {
 	s.client.streamerLock.Unlock()
 
 	if s.client.noFlushOnClose {
-		log.LogErrorf("evict: streamer(%v) flush", s)
+		log.LogDebugf("evict: streamer(%v) flush", s)
 		s.closeOpenHandler()
 		err := s.flush()
 		if err != nil {

@@ -92,10 +92,10 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 // Forget evicts the inode of the current file. This can only happen when the inode is on the orphan list.
 func (f *File) Forget() {
 	ino := f.info.Inode
-	log.LogErrorf("TRACE Forget enter: ino(%v)", ino)
+	log.LogDebugf("TRACE Forget enter: ino(%v)", ino)
 	start := time.Now()
 	defer func() {
-		log.LogErrorf("TRACE Forget: ino(%v) (%v)ns", ino, time.Since(start).Nanoseconds())
+		log.LogDebugf("TRACE Forget: ino(%v) (%v)ns", ino, time.Since(start).Nanoseconds())
 	}()
 
 	f.super.ic.Delete(ino)
@@ -141,7 +141,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 // Release handles the release request.
 func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error) {
 	ino := f.info.Inode
-	log.LogErrorf("TRACE Release enter: ino(%v) req(%v)", ino, req)
+	log.LogDebugf("TRACE Release enter: ino(%v) req(%v)", ino, req)
 
 	start := time.Now()
 
@@ -155,13 +155,13 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error
 
 	f.super.ic.Delete(ino)
 	elapsed := time.Since(start)
-	log.LogErrorf("TRACE Release: ino(%v) req(%v) (%v)ns", ino, req, elapsed.Nanoseconds())
+	log.LogDebugf("TRACE Release: ino(%v) req(%v) (%v)ns", ino, req, elapsed.Nanoseconds())
 	return nil
 }
 
 // Read handles the read request.
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) (err error) {
-	log.LogErrorf("TRACE Read enter: ino(%v) offset(%v) reqsize(%v) req(%v)", f.info.Inode, req.Offset, req.Size, req)
+	log.LogDebugf("TRACE Read enter: ino(%v) offset(%v) reqsize(%v) req(%v)", f.info.Inode, req.Offset, req.Size, req)
 
 	start := time.Now()
 
@@ -193,7 +193,7 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 	}
 
 	elapsed := time.Since(start)
-	log.LogErrorf("TRACE Read: ino(%v) offset(%v) reqsize(%v) req(%v) size(%v) (%v)ns", f.info.Inode, req.Offset, req.Size, req, size, elapsed.Nanoseconds())
+	log.LogDebugf("TRACE Read: ino(%v) offset(%v) reqsize(%v) req(%v) size(%v) (%v)ns", f.info.Inode, req.Offset, req.Size, req, size, elapsed.Nanoseconds())
 	return nil
 }
 
@@ -203,7 +203,7 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	reqlen := len(req.Data)
 	filesize, _ := f.fileSize(ino)
 
-	log.LogErrorf("TRACE Write enter: ino(%v) offset(%v) len(%v) filesize(%v) flags(%v) fileflags(%v) req(%v)", ino, req.Offset, reqlen, filesize, req.Flags, req.FileFlags, req)
+	log.LogDebugf("TRACE Write enter: ino(%v) offset(%v) len(%v) filesize(%v) flags(%v) fileflags(%v) req(%v)", ino, req.Offset, reqlen, filesize, req.Flags, req.FileFlags, req)
 
 	if req.Offset > int64(filesize) && reqlen == 1 && req.Data[0] == 0 {
 		// workaround: posix_fallocate would write 1 byte if fallocate is not supported.
@@ -241,7 +241,7 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 		defer func() {
 			metric.SetWithLabels(err, map[string]string{exporter.Vol: f.super.volname})
 		}()
-		log.LogErrorf("Write: NewTPCnt costs %v", time.Since(start))
+		log.LogDebugf("Write: NewTPCnt costs %v", time.Since(start))
 	}
 
 	size, err := f.super.ec.Write(ino, int(req.Offset), req.Data, flags)
@@ -265,17 +265,17 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	}
 
 	elapsed := time.Since(start)
-	log.LogErrorf("TRACE Write: ino(%v) offset(%v) len(%v) flags(%v) fileflags(%v) req(%v) (%v)ns ",
+	log.LogDebugf("TRACE Write: ino(%v) offset(%v) len(%v) flags(%v) fileflags(%v) req(%v) (%v)ns ",
 		ino, req.Offset, reqlen, req.Flags, req.FileFlags, req, elapsed.Nanoseconds())
 	return nil
 }
 
 // Flush only when fsyncOnClose is enabled.
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) (err error) {
-	log.LogErrorf("TRACE Flush enter: ino(%v)", f.info.Inode)
+	log.LogDebugf("TRACE Flush enter: ino(%v)", f.info.Inode)
 	start := time.Now()
 	if !f.super.fsyncOnClose {
-		log.LogErrorf("TRACE Flush: ino(%v) fsyncOnClose is false", f.info.Inode)
+		log.LogDebugf("TRACE Flush: ino(%v) fsyncOnClose is false", f.info.Inode)
 		//return fuse.ENOSYS
 		return nil
 	}
@@ -295,7 +295,7 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) (err error) {
 	}
 	f.super.ic.Delete(f.info.Inode)
 	elapsed := time.Since(start)
-	log.LogErrorf("TRACE Flush: ino(%v) (%v)ns", f.info.Inode, elapsed.Nanoseconds())
+	log.LogDebugf("TRACE Flush: ino(%v) (%v)ns", f.info.Inode, elapsed.Nanoseconds())
 	return nil
 }
 
@@ -319,9 +319,9 @@ func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) (err error) {
 func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
 	ino := f.info.Inode
 	start := time.Now()
-	log.LogErrorf("TRACE Setattr start: ino(%v) req(%v)", ino, req)
+	log.LogDebugf("TRACE Setattr start: ino(%v) req(%v)", ino, req)
 	if req.Valid.Size() {
-		log.LogErrorf("Change size: %v -> %v", f.info.Size, req.Size)
+		log.LogDebugf("Change size: %v -> %v", f.info.Size, req.Size)
 		if err := f.super.ec.Flush(ino); err != nil {
 			log.LogErrorf("Setattr: truncate wait for flush ino(%v) size(%v) err(%v)", ino, req.Size, err)
 			return ParseError(err)
@@ -358,7 +358,7 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 	fillAttr(info, &resp.Attr)
 
 	elapsed := time.Since(start)
-	log.LogErrorf("TRACE Setattr: ino(%v) req(%v) (%v)ns", ino, req, elapsed.Nanoseconds())
+	log.LogDebugf("TRACE Setattr: ino(%v) req(%v) (%v)ns", ino, req, elapsed.Nanoseconds())
 	return nil
 }
 

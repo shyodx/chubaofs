@@ -45,7 +45,8 @@ func NewBufferPool() (bufferP *BufferPool) {
 	bufferP.pools[1] = make(chan []byte, HeaderBufferPoolSize)
 	bufferP.pools[2] = make(chan []byte, RepairBufferPollSize)
 	bufferP.tinyPool = NewTinyBufferPool()
-	bufferP.PreloadTinyBufferPool(10)
+	bufferP.PreloadTinyBufferPool(100)
+	bufferP.PreloadNormalBufferPool(1000)
 	return bufferP
 }
 
@@ -103,6 +104,15 @@ func (bufferP *BufferPool) Put(data []byte) {
 func (bufferP *BufferPool) PreloadTinyBufferPool(nr int) {
 	for i := 0; i < nr; i++ {
 		data, err := bufferP.Get(util.DefaultTinySizeLimit)
+		if err == nil {
+			bufferP.Put(data)
+		}
+	}
+}
+
+func (bufferP *BufferPool) PreloadNormalBufferPool(nr int) {
+	for i := 0; i < nr; i++ {
+		data, err := bufferP.Get(util.BlockSize)
 		if err == nil {
 			bufferP.Put(data)
 		}

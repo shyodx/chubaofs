@@ -271,7 +271,7 @@ func (client *ExtentClient) Write(inode uint64, offset int, data []byte, flags i
 		if s.ShouldGetExtents() {
 			s.GetExtents()
 		}
-		log.LogErrorf("Write: do once: GetExtents costs %v", time.Since(t1))
+		log.LogDebugf("Write: do once: GetExtents costs %v", time.Since(t1))
 	})
 
 	write, err = s.IssueWriteRequest(offset, data, flags)
@@ -411,7 +411,7 @@ func (client *ExtentClient) WritebackStreams() {
 			}
 
 			if atomic.LoadInt32(&s.status) == StreamerClosed {
-				log.LogErrorf("Writeback flush stream(%v)", s)
+				log.LogDebugf("Writeback flush stream(%v)", s)
 				if err := s.IssueFlushRequest(); err != nil {
 					log.LogErrorf("Writeback stream stream(%v) fail: %v", s, err)
 				}

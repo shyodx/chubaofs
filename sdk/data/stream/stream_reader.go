@@ -203,7 +203,7 @@ func (s *Streamer) readExtentParellel(
 
 		// Reading a hole, just fill zero
 		atomic.AddInt64(rsizep, int64(req.Size))
-		log.LogErrorf("Stream read hole: ino(%v) req(%v) total(%v)", s.inode, req, *rsizep)
+		log.LogDebugf("Stream read hole: ino(%v) req(%v) total(%v)", s.inode, req, *rsizep)
 	} else {
 		reader, err = s.GetExtentReader(req.ExtentKey)
 		if err != nil {
@@ -211,7 +211,7 @@ func (s *Streamer) readExtentParellel(
 			return
 		}
 		readBytes, err = reader.Read(req)
-		log.LogErrorf("Stream read: ino(%v) req(%v) readBytes(%v) err(%v)", s.inode, req, readBytes, err)
+		log.LogDebugf("Stream read: ino(%v) req(%v) readBytes(%v) err(%v)", s.inode, req, readBytes, err)
 		atomic.AddInt64(rsizep, int64(readBytes))
 		if err != nil {
 			retCh <- err
@@ -260,7 +260,6 @@ func (s *Streamer) read(data []byte, offset int, size int) (total int, err error
 
 	filesize, _ := s.extents.Size()
 	log.LogDebugf("read: ino(%v) requests(%v) filesize(%v)", s.inode, requests, filesize)
-	log.LogErrorf("read: ino(%v) offs(%v) len(%v) requests(%v) filesize(%v)", s.inode, offset, size, len(requests), filesize)
 	parellelLevel := util.Min(len(requests), 10)
 	retCh := make(chan error, parellelLevel)
 	for i, req := range requests {
@@ -279,6 +278,6 @@ func (s *Streamer) read(data []byte, offset int, size int) (total int, err error
 	wg.Wait()
 
 	total = int(rsize)
-	log.LogErrorf("read: ino(%v) offs(%v) len(%v) requests(%v) filesize(%v) rsize(%v)", s.inode, offset, size, len(requests), filesize, total)
+	log.LogDebugf("read: ino(%v) offs(%v) len(%v) requests(%v) filesize(%v) rsize(%v)", s.inode, offset, size, len(requests), filesize, total)
 	return
 }

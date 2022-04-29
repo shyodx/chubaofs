@@ -45,7 +45,7 @@ func (p *Packet) String() string {
 func NewWritePacket(inode uint64, fileOffset, storeMode int) *Packet {
 	start := time.Now()
 	defer func() {
-		log.LogErrorf("NewWritePacket costs %v", time.Since(start))
+		log.LogDebugf("NewWritePacket storeMode(%v) costs (%v)ns", storeMode, time.Since(start).Nanoseconds())
 	}()
 	p := new(Packet)
 	p.ReqID = proto.GenerateRequestID()
