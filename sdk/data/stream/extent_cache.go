@@ -60,6 +60,7 @@ type ExtentCache struct {
 // NewExtentCache returns a new extent cache.
 func NewExtentCache(inode uint64) *ExtentCache {
 	return &ExtentCache{
+		gen:     1,
 		inode:   inode,
 		root:    btree.New(32),
 		discard: btree.New(32),
