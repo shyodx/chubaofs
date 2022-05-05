@@ -302,16 +302,30 @@ run_s3_test() {
     echo "******************************";
 
     # install system requirements
-    echo -n "Installing system requirements  ... "
-    apt-get update &>> /dev/null && apt-get install -y \
-        sudo \
-        python3 \
-        python3-pip &>> /dev/null
-    if [[ $? -ne 0 ]] ; then
-        echo -e "\033[31mfail\033[0m"
-        exit 1
+    sudo --version 2> /dev/null
+    if [ $? -ne 0 ]; then
+        need_install=1
     fi
-    echo -e "\033[32mdone\033[0m"
+    python3 --version 2> /dev/null
+    if [ $? -ne 0 ]; then
+        need_install=1
+    fi
+    pip3 --version 2> /dev/null
+    if [ $? -ne 0 ]; then
+        need_install=1
+    fi
+    if [ $need_install -eq 1 ]; then
+        echo -n "Installing system requirements  ... "
+        apt-get update &>> /dev/null && apt-get install -y \
+            sudo \
+            python3 \
+            python3-pip
+        if [[ $? -ne 0 ]] ; then
+            echo -e "\033[31mfail\033[0m"
+            exit 1
+        fi
+        echo -e "\033[32mdone\033[0m"
+    fi
 
     # install python requirements
     echo -n "Installing python requirements  ... "
