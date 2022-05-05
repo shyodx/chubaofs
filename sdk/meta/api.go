@@ -125,6 +125,7 @@ func (mw *MetaWrapper) Create_ll(parentID uint64, name string, mode, uid, gid ui
 	rwPartitions = mw.getRWPartitions()
 	length := len(rwPartitions)
 	epoch := atomic.AddUint64(&mw.epoch, 1)
+	t1 := time.Now()
 	for i := 0; i < length; i++ {
 		index := (int(epoch) + i) % length
 		mp = rwPartitions[index]
@@ -136,6 +137,7 @@ func (mw *MetaWrapper) Create_ll(parentID uint64, name string, mode, uid, gid ui
 	return nil, syscall.ENOMEM
 
 create_dentry:
+	t2 := time.Now()
 	status, err = mw.dcreate(parentMP, parentID, name, info.Inode, mode)
 	if err != nil {
 		return nil, statusToErrno(status)
@@ -146,6 +148,8 @@ create_dentry:
 		}
 		return nil, statusToErrno(status)
 	}
+	log.LogDebugf("Create_ll: parent ino(%v) child ino(%v) icreate (%v)ns dcreate(%v)ns",
+		parentID, info.Inode, t2.Sub(t1).Nanoseconds(), time.Since(t2).Nanoseconds())
 	return info, nil
 }
 
