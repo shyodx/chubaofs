@@ -116,6 +116,7 @@ func NewDir(s *Super, i *proto.InodeInfo) fs.Node {
 
 // Attr set the attributes of a directory.
 func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
+	start := time.Now()
 	ino := d.info.Inode
 	info, err := d.super.InodeGet(ino)
 	if err != nil {
@@ -123,7 +124,7 @@ func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
 		return ParseError(err)
 	}
 	fillAttr(info, a)
-	log.LogDebugf("TRACE Attr: inode(%v)", info)
+	log.LogDebugf("TRACE Attr: inode(%v) (%v)ns", info, time.Since(start).Nanoseconds())
 	return nil
 }
 
@@ -172,16 +173,16 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 
 // Forget is called when the evict is invoked from the kernel.
 func (d *Dir) Forget() {
+	start := time.Now()
 	ino := d.info.Inode
-	defer func() {
-		log.LogDebugf("TRACE Forget: ino(%v)", ino)
-	}()
 
 	d.super.ic.Delete(ino)
 
 	d.super.fslock.Lock()
 	delete(d.super.nodeCache, ino)
 	d.super.fslock.Unlock()
+
+	log.LogDebugf("TRACE Forget: ino(%v) (%v)ns", ino, time.Since(start).Nanoseconds())
 }
 
 // Mkdir handles the mkdir request.
@@ -258,7 +259,10 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 		err error
 	)
 
-	log.LogDebugf("TRACE Lookup: parent(%v) req(%v)", d.info.Inode, req)
+	start := time.Now()
+	defer func() {
+		log.LogDebugf("TRACE Lookup: parent(%v) req(%v) (%v)ns", d.info.Inode, req, time.Since(start).Nanoseconds())
+	}()
 
 	ino, ok := d.dcache.Get(req.Name)
 	if !ok {
