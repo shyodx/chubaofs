@@ -63,7 +63,6 @@ func NewFile(s *Super, i *proto.InodeInfo) fs.Node {
 
 // Attr sets the attributes of a file.
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
-	start := time.Now()
 	ino := f.info.Inode
 	info, err := f.super.InodeGet(ino)
 	if err != nil {
@@ -86,13 +85,14 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 		a.Size = uint64(len(info.Target))
 	}
 
-	log.LogDebugf("TRACE Attr: ino(%v) attr(%v) (%v)ns", ino, a, time.Since(start).Nanoseconds())
+	log.LogDebugf("TRACE Attr: inode(%v) attr(%v)", info, a)
 	return nil
 }
 
 // Forget evicts the inode of the current file. This can only happen when the inode is on the orphan list.
 func (f *File) Forget() {
 	ino := f.info.Inode
+	log.LogDebugf("TRACE Forget enter: ino(%v)", ino)
 	start := time.Now()
 	defer func() {
 		log.LogDebugf("TRACE Forget: ino(%v) (%v)ns", ino, time.Since(start).Nanoseconds())
@@ -141,6 +141,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 // Release handles the release request.
 func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error) {
 	ino := f.info.Inode
+	log.LogDebugf("TRACE Release enter: ino(%v) req(%v)", ino, req)
 
 	start := time.Now()
 
@@ -160,6 +161,8 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) (err error
 
 // Read handles the read request.
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) (err error) {
+	log.LogDebugf("TRACE Read enter: ino(%v) offset(%v) reqsize(%v) req(%v)", f.info.Inode, req.Offset, req.Size, req)
+
 	start := time.Now()
 
 	if exporter.TPCntEnabled() {
@@ -199,6 +202,8 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	ino := f.info.Inode
 	reqlen := len(req.Data)
 	filesize, _ := f.fileSize(ino)
+
+	log.LogDebugf("TRACE Write enter: ino(%v) offset(%v) len(%v) filesize(%v) flags(%v) fileflags(%v) req(%v)", ino, req.Offset, reqlen, filesize, req.Flags, req.FileFlags, req)
 
 	if req.Offset > int64(filesize) && reqlen == 1 && req.Data[0] == 0 {
 		// workaround: posix_fallocate would write 1 byte if fallocate is not supported.
@@ -267,6 +272,7 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 
 // Flush only when fsyncOnClose is enabled.
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) (err error) {
+	log.LogDebugf("TRACE Flush enter: ino(%v)", f.info.Inode)
 	start := time.Now()
 	if !f.super.fsyncOnClose {
 		log.LogDebugf("TRACE Flush: ino(%v) fsyncOnClose is false", f.info.Inode)
@@ -295,6 +301,7 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) (err error) {
 
 // Fsync hanldes the fsync request.
 func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) (err error) {
+	log.LogDebugf("TRACE Fsync enter: ino(%v)", f.info.Inode)
 	start := time.Now()
 	err = f.super.ec.Flush(f.info.Inode)
 	if err != nil {
@@ -357,14 +364,13 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 
 // Readlink handles the readlink request.
 func (f *File) Readlink(ctx context.Context, req *fuse.ReadlinkRequest) (string, error) {
-	start := time.Now()
 	ino := f.info.Inode
 	info, err := f.super.InodeGet(ino)
 	if err != nil {
 		log.LogErrorf("Readlink: ino(%v) err(%v)", ino, err)
 		return "", ParseError(err)
 	}
-	log.LogDebugf("TRACE Readlink: ino(%v) target(%v) (%v)ns", ino, string(info.Target), time.Since(start).Nanoseconds())
+	log.LogDebugf("TRACE Readlink: ino(%v) target(%v)", ino, string(info.Target))
 	return string(info.Target), nil
 }
 
@@ -373,7 +379,6 @@ func (f *File) Getxattr(ctx context.Context, req *fuse.GetxattrRequest, resp *fu
 	if !f.super.enableXattr {
 		return fuse.ENOSYS
 	}
-	start := time.Now()
 	ino := f.info.Inode
 	name := req.Name
 	size := req.Size
@@ -391,7 +396,7 @@ func (f *File) Getxattr(ctx context.Context, req *fuse.GetxattrRequest, resp *fu
 		value = value[:size]
 	}
 	resp.Xattr = value
-	log.LogDebugf("TRACE GetXattr: ino(%v) name(%v) (%v)ns", ino, name, time.Since(start).Nanoseconds())
+	log.LogDebugf("TRACE GetXattr: ino(%v) name(%v)", ino, name)
 	return nil
 }
 
@@ -400,7 +405,6 @@ func (f *File) Listxattr(ctx context.Context, req *fuse.ListxattrRequest, resp *
 	if !f.super.enableXattr {
 		return fuse.ENOSYS
 	}
-	start := time.Now()
 	ino := f.info.Inode
 	_ = req.Size     // ignore currently
 	_ = req.Position // ignore currently
@@ -413,7 +417,7 @@ func (f *File) Listxattr(ctx context.Context, req *fuse.ListxattrRequest, resp *
 	for _, key := range keys {
 		resp.Append(key)
 	}
-	log.LogDebugf("TRACE Listxattr: ino(%v) (%v)ns", ino, time.Since(start).Nanoseconds())
+	log.LogDebugf("TRACE Listxattr: ino(%v)", ino)
 	return nil
 }
 
@@ -422,7 +426,6 @@ func (f *File) Setxattr(ctx context.Context, req *fuse.SetxattrRequest) error {
 	if !f.super.enableXattr {
 		return fuse.ENOSYS
 	}
-	start := time.Now()
 	ino := f.info.Inode
 	name := req.Name
 	value := req.Xattr
@@ -431,7 +434,7 @@ func (f *File) Setxattr(ctx context.Context, req *fuse.SetxattrRequest) error {
 		log.LogErrorf("Setxattr: ino(%v) name(%v) err(%v)", ino, name, err)
 		return ParseError(err)
 	}
-	log.LogDebugf("TRACE Setxattr: ino(%v) name(%v) (%v)ns", ino, name, time.Since(start).Nanoseconds())
+	log.LogDebugf("TRACE Setxattr: ino(%v) name(%v)", ino, name)
 	return nil
 }
 
@@ -440,14 +443,13 @@ func (f *File) Removexattr(ctx context.Context, req *fuse.RemovexattrRequest) er
 	if !f.super.enableXattr {
 		return fuse.ENOSYS
 	}
-	start := time.Now()
 	ino := f.info.Inode
 	name := req.Name
 	if err := f.super.mw.XAttrDel_ll(ino, name); err != nil {
 		log.LogErrorf("Removexattr: ino(%v) name(%v) err(%v)", ino, name, err)
 		return ParseError(err)
 	}
-	log.LogDebugf("TRACE RemoveXattr: ino(%v) name(%v) (%v)ns", ino, name, time.Since(start).Nanoseconds())
+	log.LogDebugf("TRACE RemoveXattr: ino(%v) name(%v)", ino, name)
 	return nil
 }
 
