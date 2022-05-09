@@ -386,7 +386,7 @@ func (client *ExtentClient) Close() error {
 }
 
 func (client *ExtentClient) WritebackStreams() {
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 
 	for {
 		select {

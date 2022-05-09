@@ -323,7 +323,7 @@ func (s *Streamer) write(data []byte, offset, size, flags int) (total int, err e
 func (s *Streamer) doOverwrite(req *ExtentRequest, direct bool) (total int, err error) {
 
 	// If the extent key is a local key, we need to flush first.
-	if req.ExtentKey.PartitionId == 0 || req.ExtentKey.ExtentId == 0 {
+	if req.ExtentKey.PartitionId == 0 || req.ExtentKey.ExtentId == 0 || s.dirty {
 		err = s.flush()
 		if err != nil {
 			return

@@ -139,7 +139,7 @@ create_volumes() {
         # check volume exists
         ${cli} volume info ${VolName} &>/dev/null
         if [[ $? -eq 0 ]]; then
-            echo -e "\033[32mdone\033[0m"
+            echo -e "\033[32mcontinue\033[0m"
             continue
         fi
         ${cli} volume create ${VolName} ${Owner} --capacity=15 --follower-read=false -y >/dev/null
@@ -187,8 +187,8 @@ print_error_info() {
     cat /cfs/log/client/client_info.log
     cat /cfs/log/client/client_error.log
     cat /cfs/log/client/client_warn.log
-    curl -s "http://$LeaderAddr/admin/getCluster" | jq
-    mount
+    #curl -s "http://$LeaderAddr/admin/getCluster" | jq
+    #mount
     df -h
     stat $MntPoint
     ls -l $MntPoint
@@ -197,6 +197,9 @@ print_error_info() {
 
 start_client() {
     echo -n "Starting client   ... "
+    cat /cfs/conf/client.json
+    /cfs/bin/cfs-client -v
+    sleep 1
     nohup /cfs/bin/cfs-client -c /cfs/conf/client.json >/cfs/log/cfs.out 2>&1 &
     sleep 10
     res=$( stat $MntPoint | grep -q "Inode: 1" ; echo $? )
@@ -350,10 +353,10 @@ create_cluster_user
 ensure_node_writable "metanode"
 ensure_node_writable "datanode"
 create_volumes ; sleep 2
-add_data_partitions ; sleep 3
+#add_data_partitions ; sleep 3
 show_cluster_info
 start_client ; sleep 2
 run_ltptest
-run_s3_test
+#run_s3_test
 stop_client
-delete_volumes
+#delete_volumes

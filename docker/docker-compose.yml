@@ -31,10 +31,6 @@ services:
             - datanode2
             - datanode3
             - datanode4
-            - objectnode1
-            - objectnode2
-            - objectnode3
-            - console1
             - nginx
         networks:
             extnetwork:
