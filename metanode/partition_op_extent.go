@@ -49,21 +49,36 @@ func (mp *metaPartition) ExtentAppend(req *proto.AppendExtentKeyRequest, p *Pack
 // ExtentAppendWithCheck appends an extent with discard extents check.
 // Format: one valid extent key followed by non or several discard keys.
 func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithCheckRequest, p *Packet) (err error) {
-	ino := NewInode(req.Inode, 0)
 	// check volume's Type: if volume's type is cold, cbfs' extent can be modify/add only when objextent exist
 	if proto.IsCold(mp.volType) {
-		item := mp.inodeTree.Get(ino)
-		if item == nil {
-			err = fmt.Errorf("inode[%v] not exist", ino)
+		var raw []byte
+		tree := mp.GetTree()
+		txn, _ := tree.TransactionBegin(TxnDefault)
+
+		key := InodeKey(InoToBytes(req.Inode))
+		if raw, err = tree.Get(txn, key, INODE); err != nil {
 			p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
+			tree.TransactionEnd(txn, nil)
 			return
 		}
-		i := item.(*Inode)
+		if raw == nil {
+			err = fmt.Errorf("inode[%v] not exist", req.Inode)
+			p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
+			tree.TransactionEnd(txn, nil)
+			return
+		}
+		i := &Inode{}
+		if err = i.Unmarshal(raw); err != nil {
+			p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
+			tree.TransactionEnd(txn, nil)
+			return
+		}
 
 		i.RLock()
 		exist, idx := i.ObjExtents.FindOffsetExist(req.Extent.FileOffset)
 		if !exist {
 			i.RUnlock()
+			tree.TransactionEnd(txn, nil)
 			err = fmt.Errorf("ebs's objextent not exist with offset[%v]", req.Extent.FileOffset)
 			p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
 			return
@@ -72,12 +87,15 @@ func (mp *metaPartition) ExtentAppendWithCheck(req *proto.AppendExtentKeyWithChe
 			err = fmt.Errorf("ebs's objextent size[%v] isn't equal to the append size[%v]", i.ObjExtents.eks[idx].Size, req.Extent.Size)
 			p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
 			i.RUnlock()
+			tree.TransactionEnd(txn, nil)
 			return
 		}
 		i.RUnlock()
+		tree.TransactionEnd(txn, nil)
 	}
 
 	ext := req.Extent
+	ino := NewInode(req.Inode, 0)
 	ino.Extents.Append(ext)
 	//log.LogInfof("ExtentAppendWithCheck: ino(%v) ext(%v) discard(%v) eks(%v)", req.Inode, ext, req.DiscardExtents, ino.Extents.eks)
 	// Store discard extents right after the append extent key.

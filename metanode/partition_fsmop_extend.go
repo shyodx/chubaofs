@@ -14,33 +14,61 @@
 
 package metanode
 
+import "github.com/cubefs/cubefs/util/log"
+
 type ExtendOpResult struct {
 	Status uint8
 	Extend *Extend
 }
 
-func (mp *metaPartition) fsmSetXAttr(extend *Extend) (err error) {
-	treeItem := mp.extendTree.CopyGet(extend)
+func (mp *metaPartition) fsmSetXAttr(extend *Extend) error {
+	// FIXME: transaction recursive by UpdateXAttr
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := ExtendKey(ExtendToBytes())
+
+	data, err := tree.Get(txn, key, EXTEND)
+	if err != nil {
+		log.LogErrorf("[fsmSetXAttr] failed to set xattr: %v", err)
+		return err
+	}
+
 	var e *Extend
-	if treeItem == nil {
+	if data == nil {
 		e = NewExtend(extend.inode)
-		mp.extendTree.ReplaceOrInsert(e, true)
 	} else {
-		e = treeItem.(*Extend)
+		e, err = NewExtendFromBytes(data)
 	}
 	e.Merge(extend, true)
-	return
+	data, err = e.Bytes()
+	err = tree.Put(txn, key, data, EXTEND)
+
+	tree.TransactionCommit(txn)
+	return err
 }
 
-func (mp *metaPartition) fsmRemoveXAttr(extend *Extend) (err error) {
-	treeItem := mp.extendTree.CopyGet(extend)
-	if treeItem == nil {
-		return
+func (mp *metaPartition) fsmRemoveXAttr(extend *Extend) error {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	data, err := tree.Get(txn, ExtendKey(ExtendToBytes()), EXTEND)
+	if err != nil {
+		log.LogErrorf("[fsmSetXAttr] failed to set xattr: %v", err)
+		return err
 	}
-	e := treeItem.(*Extend)
+	if data == nil {
+		return err
+	}
+
+	e, err := NewExtendFromBytes(data)
 	extend.Range(func(key, value []byte) bool {
 		e.Remove(key)
 		return true
 	})
-	return
+
+	tree.TransactionCommit(txn)
+	return err
 }

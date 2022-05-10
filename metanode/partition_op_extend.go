@@ -23,16 +23,31 @@ import (
 )
 
 func (mp *metaPartition) UpdateXAttr(req *proto.UpdateXAttrRequest, p *Packet) (err error) {
+	var raw []byte
+
 	newValueList := strings.Split(req.Value, ",")
 	filesInc, _ := strconv.ParseInt(newValueList[0], 10, 64)
 	dirsInc, _ := strconv.ParseInt(newValueList[1], 10, 64)
 	bytesInc, _ := strconv.ParseInt(newValueList[2], 10, 64)
 
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+
 	mp.xattrLock.Lock()
 	defer mp.xattrLock.Unlock()
-	treeItem := mp.extendTree.Get(NewExtend(req.Inode))
-	if treeItem != nil {
-		extend := treeItem.(*Extend)
+	key := ExtendKey(ExtendToBytes())
+	raw, err = tree.Get(txn, key, EXTEND)
+	tree.TransactionEnd(txn, nil)
+	if err != nil {
+		return
+	}
+	if raw != nil {
+		var extend *Extend
+		extend, err = NewExtendFromBytes(raw)
+		if err != nil {
+			return
+		}
+
 		if value, exist := extend.Get([]byte(req.Key)); exist {
 			oldValueList := strings.Split(string(value), ",")
 			oldFiles, _ := strconv.ParseInt(oldValueList[0], 10, 64)
@@ -92,9 +107,22 @@ func (mp *metaPartition) GetXAttr(req *proto.GetXAttrRequest, p *Packet) (err er
 		Inode:       req.Inode,
 		Key:         req.Key,
 	}
-	treeItem := mp.extendTree.Get(NewExtend(req.Inode))
-	if treeItem != nil {
-		extend := treeItem.(*Extend)
+
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := ExtendKey(ExtendToBytes())
+	raw, err := tree.Get(txn, key, EXTEND)
+	if err != nil {
+		return err
+	}
+	if raw != nil {
+		extend, err := NewExtendFromBytes(raw)
+		if err != nil {
+			return err
+		}
+
 		if value, exist := extend.Get([]byte(req.Key)); exist {
 			response.Value = string(value)
 		}
@@ -115,10 +143,23 @@ func (mp *metaPartition) BatchGetXAttr(req *proto.BatchGetXAttrRequest, p *Packe
 		PartitionId: req.PartitionId,
 		XAttrs:      make([]*proto.XAttrInfo, 0, len(req.Inodes)),
 	}
+
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
 	for _, inode := range req.Inodes {
-		treeItem := mp.extendTree.Get(NewExtend(inode))
-		if treeItem != nil {
-			extend := treeItem.(*Extend)
+		key := ExtendKey(ExtendToBytes())
+		raw, err := tree.Get(txn, key, EXTEND)
+		if err != nil {
+			return err
+		}
+		if raw != nil {
+			extend, err := NewExtendFromBytes(raw)
+			if err != nil {
+				return err
+			}
+
 			info := &proto.XAttrInfo{
 				Inode:  inode,
 				XAttrs: make(map[string]string),
@@ -158,9 +199,22 @@ func (mp *metaPartition) ListXAttr(req *proto.ListXAttrRequest, p *Packet) (err 
 		Inode:       req.Inode,
 		XAttrs:      make([]string, 0),
 	}
-	treeItem := mp.extendTree.Get(NewExtend(req.Inode))
-	if treeItem != nil {
-		extend := treeItem.(*Extend)
+
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := ExtendKey(ExtendToBytes())
+	raw, err := tree.Get(txn, key, EXTEND)
+	if err != nil {
+		return err
+	}
+	if raw != nil {
+		extend, err := NewExtendFromBytes(raw)
+		if err != nil {
+			return err
+		}
+
 		extend.Range(func(key, value []byte) bool {
 			response.XAttrs = append(response.XAttrs, string(key))
 			return true

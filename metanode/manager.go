@@ -369,9 +369,9 @@ func (m *metadataManager) loadPartitions() (err error) {
 					}
 					errload = nil
 				}
-				partition := NewMetaPartition(partitionConfig, m)
-				if partition == nil {
-					log.LogErrorf("loadPartitions: NewMetaPartition is nil")
+				partition, errload := NewMetaPartition(partitionConfig, m)
+				if errload != nil {
+					log.LogErrorf("loadPartitions: NewMetaPartition fail: %v", errload)
 					return
 				}
 				errload = m.attachPartition(id, partition)
@@ -445,9 +445,9 @@ func (m *metadataManager) createPartition(request *proto.CreateMetaPartitionRequ
 		return
 	}
 
-	partition := NewMetaPartition(mpc, m)
-	if partition == nil {
-		err = errors.NewErrorf("[createPartition] partition is nil")
+	partition, err := NewMetaPartition(mpc, m)
+	if err != nil {
+		err = errors.NewErrorf("[createPartition] partition fail: %v", err)
 		return
 	}
 	if err = partition.PersistMetadata(); err != nil {

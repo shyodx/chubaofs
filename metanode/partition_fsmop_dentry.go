@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"github.com/cubefs/cubefs/proto"
-	"github.com/cubefs/cubefs/util/btree"
 	"github.com/cubefs/cubefs/util/log"
 )
 
@@ -34,19 +33,32 @@ func NewDentryResponse() *DentryResponse {
 }
 
 // Insert a dentry into the dentry tree.
-func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
-	forceUpdate bool) (status uint8) {
+func (mp *metaPartition) fsmCreateDentry(dentry *Dentry, forceUpdate bool) (status uint8) {
 	status = proto.OpOk
-	item := mp.inodeTree.CopyGet(NewInode(dentry.ParentId, 0))
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+	ikey := InodeKey(InoToBytes(dentry.ParentId))
+	ival, err := tree.Get(txn, ikey, INODE)
+	if err != nil {
+		log.LogInfof("action[fsmCreateDentry] failed to get parentId [%v], dentry name [%v], inode [%v]: %v",
+			dentry.ParentId, dentry.Name, dentry.Inode, err)
+		return proto.OpIntraGroupNetErr
+	}
 	log.LogInfof("action[fsmCreateDentry] ParentId [%v] get nil, dentry name [%v], inode [%v]", dentry.ParentId, dentry.Name, dentry.Inode)
 	var parIno *Inode
 	if !forceUpdate {
-		if item == nil {
+		if ival == nil {
 			log.LogErrorf("action[fsmCreateDentry] ParentId [%v] get nil, dentry name [%v], inode [%v]", dentry.ParentId, dentry.Name, dentry.Inode)
 			status = proto.OpNotExistErr
 			return
 		}
-		parIno = item.(*Inode)
+		parIno = &Inode{}
+		if err = parIno.Unmarshal(ival); err != nil {
+			log.LogErrorf("action[fsmCreateDentry] ParentId [%v] unmarshal fail, dentry name [%v], inode [%v]: %v",
+				dentry.ParentId, dentry.Name, dentry.Inode)
+			return proto.OpIntraGroupNetErr
+		}
 		if parIno.ShouldDelete() {
 			log.LogErrorf("action[fsmCreateDentry] ParentId [%v] get [%v] but should del, dentry name [%v], inode [%v]", dentry.ParentId, parIno, dentry.Name, dentry.Inode)
 			status = proto.OpNotExistErr
@@ -57,10 +69,13 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 			return
 		}
 	}
-	if item, ok := mp.dentryTree.ReplaceOrInsert(dentry, false); !ok {
+	dkey, dval := dentry.ParseKVPair()
+
+	if old, ok := tree.ReplaceOrInsert(txn, dkey, dval, DENTRY, false); !ok {
+		d := &Dentry{}
+		d.Unmarshal(old)
 		//do not allow directories and files to overwrite each
 		// other when renaming
-		d := item.(*Dentry)
 		if proto.OsModeType(dentry.Type) != proto.OsModeType(d.Type) {
 			status = proto.OpArgMismatchErr
 			return
@@ -78,59 +93,84 @@ func (mp *metaPartition) fsmCreateDentry(dentry *Dentry,
 		}
 	}
 
+	tree.TransactionCommit(txn)
+
 	return
 }
 
-// Query a dentry from the dentry tree with specified dentry info.
-func (mp *metaPartition) getDentry(dentry *Dentry) (*Dentry, uint8) {
-	status := proto.OpOk
-	item := mp.dentryTree.Get(dentry)
-	if item == nil {
-		status = proto.OpNotExistErr
-		return nil, status
-	}
-	dentry = item.(*Dentry)
-	return dentry, status
-}
-
 // Delete dentry from the dentry tree.
-func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (
-	resp *DentryResponse) {
+func (mp *metaPartition) fsmDeleteDentry(dentry *Dentry, checkInode bool) (resp *DentryResponse) {
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
+	tree := mp.GetTree()
 
-	var item interface{}
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	dkey := DentryKey(dentry.MarshalKey())
 	if checkInode {
-		item = mp.dentryTree.Execute(func(tree *btree.BTree) interface{} {
-			d := tree.CopyGet(dentry)
-			if d == nil {
-				return nil
-			}
-			if d.(*Dentry).Inode != dentry.Inode {
-				return nil
-			}
-			return mp.dentryTree.tree.Delete(dentry)
-		})
-	} else {
-		item = mp.dentryTree.Delete(dentry)
+		data, err := tree.Get(txn, dkey, DENTRY)
+		if err != nil {
+			resp.Status = proto.OpIntraGroupNetErr
+			log.LogErrorf("[fsmDeleteDentry] failed to get dentry(%v): %v", dentry.Name, err)
+			return
+		}
+		if data == nil {
+			resp.Status = proto.OpNotExistErr
+			return
+		}
+
+		checkedDentry := &Dentry{}
+		if err = checkedDentry.Unmarshal(data); err != nil {
+			log.LogErrorf("[fsmDeleteDentry] failed to get dentry(%v): %v", dentry.Name, err)
+			resp.Status = proto.OpIntraGroupNetErr
+			return
+		}
+		if checkedDentry.Inode != dentry.Inode {
+			resp.Status = proto.OpNotExistErr
+			return
+		}
 	}
 
-	if item == nil {
+	ddata := tree.Delete(txn, dkey, DENTRY)
+	if ddata == nil {
 		resp.Status = proto.OpNotExistErr
 		return
-	} else {
-		mp.inodeTree.CopyFind(NewInode(dentry.ParentId, 0),
-			func(item BtreeItem) {
-				if item != nil {
-					ino := item.(*Inode)
-					if !ino.ShouldDelete() {
-						item.(*Inode).DecNLink()
-						item.(*Inode).SetMtime()
-					}
-				}
-			})
 	}
-	resp.Msg = item.(*Dentry)
+
+	deletedDentry := &Dentry{}
+	deletedDentry.Unmarshal(ddata)
+
+	pInode := NewInode(dentry.ParentId, 0)
+	ikey := InodeKey(pInode.MarshalKey())
+	idata, err := tree.Get(txn, ikey, INODE)
+	if err != nil {
+		log.LogErrorf("[fsmDeleteDentry] failed to get parent inode(%v): %v", dentry.ParentId, err)
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	if idata != nil {
+		pInode.Unmarshal(idata)
+		if !pInode.ShouldDelete() {
+			pInode.DecNLink()
+			pInode.SetMtime()
+		}
+
+		if idata, err = pInode.Marshal(); err != nil {
+			log.LogErrorf("[fsmDeleteDentry] failed to marshal parent inode(%v): %v", pInode.Inode, err)
+			resp.Status = proto.OpIntraGroupNetErr
+			return
+
+		}
+		if err = tree.Put(txn, ikey, idata, INODE); err != nil {
+			log.LogErrorf("[fsmDeleteDentry] failed to save updated parent inode(%v): %v", pInode.Inode, err)
+			resp.Status = proto.OpIntraGroupNetErr
+			return
+		}
+	}
+
+	tree.TransactionCommit(txn)
+	resp.Msg = deletedDentry
 	return
 }
 
@@ -143,36 +183,67 @@ func (mp *metaPartition) fsmBatchDeleteDentry(db DentryBatch) []*DentryResponse 
 	return result
 }
 
-func (mp *metaPartition) fsmUpdateDentry(dentry *Dentry) (
-	resp *DentryResponse) {
+func (mp *metaPartition) fsmUpdateDentry(dentry *Dentry) (resp *DentryResponse) {
 	resp = NewDentryResponse()
 	resp.Status = proto.OpOk
-	mp.dentryTree.CopyFind(dentry, func(item BtreeItem) {
-		if item == nil {
-			resp.Status = proto.OpNotExistErr
-			return
-		}
-		d := item.(*Dentry)
-		d.Inode, dentry.Inode = dentry.Inode, d.Inode
-		resp.Msg = dentry
-	})
-	return
-}
+	tree := mp.GetTree()
 
-func (mp *metaPartition) getDentryTree() *BTree {
-	return mp.dentryTree.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := DentryKey(dentry.MarshalKey())
+	data, err := tree.Get(txn, key, DENTRY)
+	if err != nil {
+		log.LogErrorf("[fsmUpdateDentry] failed to get dentry(%v): %v", dentry.Name, err)
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
+		resp.Status = proto.OpNotExistErr
+		return
+	}
+
+	d := &Dentry{}
+	if err = d.Unmarshal(data); err != nil {
+		log.LogErrorf("[fsmUpdateDentry] failed to unmarshal dentry(%v): %v", dentry.Name, err)
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+
+	dentry.Inode = d.Inode
+	if data, err = dentry.Marshal(); err != nil {
+		log.LogErrorf("[fsmUpdateDentry] failed to marshal new dentry(%v): %v", dentry.Name, err)
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	if err = tree.Put(txn, key, data, DENTRY); err != nil {
+		log.LogErrorf("[fsmUpdateDentry] failed to save new dentry(%v): %v", dentry.Name, err)
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+
+	tree.TransactionCommit(txn)
+	resp.Msg = dentry
+	return
 }
 
 func (mp *metaPartition) readDirOnly(req *ReadDirOnlyReq) (resp *ReadDirOnlyResp) {
 	resp = &ReadDirOnlyResp{}
-	begDentry := &Dentry{
-		ParentId: req.ParentID,
-	}
-	endDentry := &Dentry{
-		ParentId: req.ParentID + 1,
-	}
-	mp.dentryTree.AscendRange(begDentry, endDentry, func(i BtreeItem) bool {
-		d := i.(*Dentry)
+	startKey := DentryKey(DentToBytes(req.ParentID, ""))
+	endKey := DentryKey(DentToBytes(req.ParentID+1, ""))
+	tree := mp.GetTree()
+
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	tree.TraverseRange(txn, nil, DENTRY, startKey, endKey, func(data []byte) bool {
+		d := &Dentry{}
+		if err := d.Unmarshal(data); err != nil {
+			log.LogErrorf("[readDirOnly] failed to unmarshal data in parent inode(%v): %v",
+				req.ParentID, err)
+			// continue
+			return true
+		}
 		if proto.IsDir(d.Type) {
 			resp.Children = append(resp.Children, proto.Dentry{
 				Inode: d.Inode,
@@ -187,19 +258,28 @@ func (mp *metaPartition) readDirOnly(req *ReadDirOnlyReq) (resp *ReadDirOnlyResp
 
 func (mp *metaPartition) readDir(req *ReadDirReq) (resp *ReadDirResp) {
 	resp = &ReadDirResp{}
-	begDentry := &Dentry{
-		ParentId: req.ParentID,
-	}
-	endDentry := &Dentry{
-		ParentId: req.ParentID + 1,
-	}
-	mp.dentryTree.AscendRange(begDentry, endDentry, func(i BtreeItem) bool {
-		d := i.(*Dentry)
-		resp.Children = append(resp.Children, proto.Dentry{
-			Inode: d.Inode,
-			Type:  d.Type,
-			Name:  d.Name,
-		})
+	startKey := DentryKey(DentToBytes(req.ParentID, ""))
+	endKey := DentryKey(DentToBytes(req.ParentID+1, ""))
+	tree := mp.GetTree()
+
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	tree.TraverseRange(txn, nil, DENTRY, startKey, endKey, func(data []byte) bool {
+		d := &Dentry{}
+		if err := d.Unmarshal(data); err != nil {
+			log.LogErrorf("[readDirOnly] failed to unmarshal data in parent inode(%v): %v",
+				req.ParentID, err)
+			// continue
+			return true
+		}
+		if proto.IsDir(d.Type) {
+			resp.Children = append(resp.Children, proto.Dentry{
+				Inode: d.Inode,
+				Type:  d.Type,
+				Name:  d.Name,
+			})
+		}
 		return true
 	})
 	return
@@ -212,23 +292,35 @@ func (mp *metaPartition) readDir(req *ReadDirReq) (resp *ReadDirResp) {
 // else if req.Marker != "" and req.Limit != 0, return dentries from pid:marker to pid:xxxx with limit count
 //
 func (mp *metaPartition) readDirLimit(req *ReadDirLimitReq) (resp *ReadDirLimitResp) {
+	var startKey DentryKey
 	resp = &ReadDirLimitResp{}
-	startDentry := &Dentry{
-		ParentId: req.ParentID,
-	}
+
 	if len(req.Marker) > 0 {
-		startDentry.Name = req.Marker
+		startKey = DentryKey(DentToBytes(req.ParentID, req.Marker))
+	} else {
+		startKey = DentryKey(DentToBytes(req.ParentID, ""))
 	}
-	endDentry := &Dentry{
-		ParentId: req.ParentID + 1,
-	}
-	mp.dentryTree.AscendRange(startDentry, endDentry, func(i BtreeItem) bool {
-		d := i.(*Dentry)
-		resp.Children = append(resp.Children, proto.Dentry{
-			Inode: d.Inode,
-			Type:  d.Type,
-			Name:  d.Name,
-		})
+	endKey := DentryKey(DentToBytes(req.ParentID+1, ""))
+	tree := mp.GetTree()
+
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	tree.TraverseRange(txn, nil, DENTRY, startKey, endKey, func(data []byte) bool {
+		d := &Dentry{}
+		if err := d.Unmarshal(data); err != nil {
+			log.LogErrorf("[readDirOnly] failed to unmarshal data in parent inode(%v): %v",
+				req.ParentID, err)
+			// continue
+			return true
+		}
+		if proto.IsDir(d.Type) {
+			resp.Children = append(resp.Children, proto.Dentry{
+				Inode: d.Inode,
+				Type:  d.Type,
+				Name:  d.Name,
+			})
+		}
 		// Limit == 0 means no limit.
 		if req.Limit > 0 && uint64(len(resp.Children)) >= req.Limit {
 			return false

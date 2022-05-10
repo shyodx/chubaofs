@@ -18,8 +18,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"sync"
-
-	"github.com/cubefs/cubefs/util/btree"
 )
 
 type Extend struct {
@@ -70,11 +68,6 @@ func NewExtendFromBytes(raw []byte) (*Extend, error) {
 	return ext, nil
 }
 
-func (e *Extend) Less(than btree.Item) bool {
-	ext, is := than.(*Extend)
-	return is && e.inode < ext.inode
-}
-
 func (e *Extend) Put(key, value []byte) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -119,14 +112,6 @@ func (e *Extend) Merge(o *Extend, override bool) {
 	})
 }
 
-func (e *Extend) Copy() btree.Item {
-	newExt := NewExtend(e.inode)
-	for k, v := range e.dataMap {
-		newExt.dataMap[k] = v
-	}
-	return newExt
-}
-
 func (e *Extend) Bytes() ([]byte, error) {
 	var err error
 	e.mu.RLock()
@@ -166,4 +151,18 @@ func (e *Extend) Bytes() ([]byte, error) {
 		}
 	}
 	return buffer.Bytes(), nil
+}
+
+type ExtendKey []byte
+
+func (ek ExtendKey) Compare(than []byte) int {
+	return 0
+}
+
+func (ek ExtendKey) Value() []byte {
+	return []byte(ek)
+}
+
+func ExtendToBytes() []byte {
+	return []byte("")
 }

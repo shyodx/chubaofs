@@ -154,11 +154,10 @@ func (m *MetaNode) getAllInodesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var inode *Inode
-
-	f := func(i BtreeItem) bool {
+	f := func(data []byte) bool {
 		var (
-			data []byte
-			e    error
+			raw []byte
+			e   error
 		)
 
 		if inode != nil {
@@ -166,15 +165,21 @@ func (m *MetaNode) getAllInodesHandler(w http.ResponseWriter, r *http.Request) {
 				log.LogErrorf("[getAllInodesHandler] failed to write response: %v", e)
 				return false
 			}
+		} else {
+			inode = &Inode{}
 		}
 
-		inode = i.(*Inode)
-		if data, e = inode.MarshalToJSON(); e != nil {
+		if e = inode.Unmarshal(data); e != nil {
+			log.LogErrorf("[getAllInodesHandler] failed to unmarshal data: %v", e)
+			return false
+		}
+
+		if raw, e = inode.MarshalToJSON(); e != nil {
 			log.LogErrorf("[getAllInodesHandler] failed to marshal to json: %v", e)
 			return false
 		}
 
-		if _, e = w.Write(data); e != nil {
+		if _, e = w.Write(raw); e != nil {
 			log.LogErrorf("[getAllInodesHandler] failed to write response: %v", e)
 			return false
 		}
@@ -182,7 +187,11 @@ func (m *MetaNode) getAllInodesHandler(w http.ResponseWriter, r *http.Request) {
 		return true
 	}
 
-	mp.GetInodeTree().Ascend(f)
+	// we don't need a very precise list of inodes
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	tree.Traverse(txn, nil, INODE, f)
+	tree.TransactionEnd(txn, nil)
 }
 
 func (m *MetaNode) getInodeHandler(w http.ResponseWriter, r *http.Request) {
@@ -421,30 +430,40 @@ func (m *MetaNode) getAllDentriesHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	buff.Reset()
-	var (
-		val       []byte
-		delimiter = []byte{',', '\n'}
-		isFirst   = true
-	)
-	mp.GetDentryTree().Ascend(func(i BtreeItem) bool {
-		if !isFirst {
-			if _, err = w.Write(delimiter); err != nil {
+
+	var d *Dentry
+	f := func(data []byte) bool {
+		if d != nil {
+			if _, e := w.Write([]byte{',', '\n'}); e != nil {
 				return false
 			}
 		} else {
-			isFirst = false
+			d = &Dentry{}
 		}
-		val, err = json.Marshal(i)
-		if err != nil {
+
+		if e := d.Unmarshal(data); e != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(err.Error()))
+			w.Write([]byte(e.Error()))
 			return false
 		}
-		if _, err = w.Write(val); err != nil {
+
+		raw, e := json.Marshal(d)
+		if e != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(e.Error()))
+			return false
+		}
+		if _, e = w.Write(raw); e != nil {
 			return false
 		}
 		return true
-	})
+	}
+	// we don't need a very precise list of inodes
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	tree.Traverse(txn, nil, DENTRY, f)
+	tree.TransactionEnd(txn, nil)
+
 	shouldSkip = true
 	buff.WriteString(`]}`)
 	if _, err = w.Write(buff.Bytes()); err != nil {

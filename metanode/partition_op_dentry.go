@@ -213,14 +213,26 @@ func (mp *metaPartition) ReadDirLimit(req *ReadDirLimitReq, p *Packet) (err erro
 }
 
 // Lookup looks up the given dentry from the request.
-func (mp *metaPartition) Lookup(req *LookupReq, p *Packet) (err error) {
-	dentry := &Dentry{
-		ParentId: req.ParentID,
-		Name:     req.Name,
+func (mp *metaPartition) Lookup(req *LookupReq, p *Packet) error {
+	var (
+		status uint8
+		reply  []byte
+	)
+
+	key := DentryKey(DentToBytes(req.ParentID, req.Name))
+	data, err := mp.tree.GetNoTxn(key, DENTRY)
+	if err != nil {
+		p.PacketErrorWithBody(proto.OpErr, []byte(err.Error()))
+		return err
 	}
-	dentry, status := mp.getDentry(dentry)
-	var reply []byte
-	if status == proto.OpOk {
+
+	if data == nil {
+		p.PacketErrorWithBody(proto.OpNotExistErr, reply)
+		return err
+	}
+
+	dentry := &Dentry{}
+	if err = dentry.Unmarshal(data); err == nil {
 		resp := &LookupResp{
 			Inode: dentry.Inode,
 			Mode:  dentry.Type,
@@ -232,10 +244,5 @@ func (mp *metaPartition) Lookup(req *LookupReq, p *Packet) (err error) {
 		}
 	}
 	p.PacketErrorWithBody(status, reply)
-	return
-}
-
-// GetDentryTree returns the dentry tree stored in the meta partition.
-func (mp *metaPartition) GetDentryTree() *BTree {
-	return mp.dentryTree.GetTree()
+	return err
 }

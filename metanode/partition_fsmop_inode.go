@@ -37,39 +37,86 @@ func NewInodeResponse() *InodeResponse {
 // Create and inode and attach it to the inode tree.
 func (mp *metaPartition) fsmCreateInode(ino *Inode) (status uint8) {
 	status = proto.OpOk
-	if _, ok := mp.inodeTree.ReplaceOrInsert(ino, false); !ok {
-		status = proto.OpExistErr
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+
+	key := InodeKey(InoToBytes(ino.Inode))
+	val, err := ino.Marshal()
+	if err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
 	}
+	if err = tree.Put(txn, key, val, INODE); err != nil {
+		status = proto.OpExistErr
+		return
+	}
+
+	tree.TransactionCommit(txn)
+	tree.TransactionEnd(txn, nil)
 	return
 }
 
 func (mp *metaPartition) fsmCreateLinkInode(ino *Inode) (resp *InodeResponse) {
 	resp = NewInodeResponse()
 	resp.Status = proto.OpOk
-	item := mp.inodeTree.CopyGet(ino)
-	if item == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+
+	key := InodeKey(ino.MarshalKey())
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
 		resp.Status = proto.OpNotExistErr
 		return
 	}
-	i := item.(*Inode)
+	i := NewInode(ino.Inode, ino.Type)
+	if err = i.Unmarshal(data); err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
 	if i.ShouldDelete() {
 		resp.Status = proto.OpNotExistErr
 		return
 	}
 	i.IncNLink()
+	if data, err = i.Marshal(); err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	if err = tree.Put(txn, key, data, INODE); err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	tree.TransactionCommit(txn)
 	resp.Msg = i
 	return
 }
 
+//FIXME: caller may have transaction too
 func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
 	resp = NewInodeResponse()
 	resp.Status = proto.OpOk
-	item := mp.inodeTree.Get(ino)
-	if item == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+
+	key := InodeKey(ino.MarshalKey())
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
 		resp.Status = proto.OpNotExistErr
 		return
 	}
-	i := item.(*Inode)
+	i := NewInode(ino.Inode, ino.Type)
+	if err = i.Unmarshal(data); err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
 	if i.ShouldDelete() {
 		resp.Status = proto.OpNotExistErr
 		return
@@ -82,18 +129,32 @@ func (mp *metaPartition) getInode(ino *Inode) (resp *InodeResponse) {
 	if ctime > i.AccessTime {
 		i.AccessTime = ctime
 	}
+	if data, err = i.Marshal(); err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	if err = tree.Put(txn, key, data, INODE); err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	tree.TransactionCommit(txn)
 
 	resp.Msg = i
 	return
 }
 
 func (mp *metaPartition) hasInode(ino *Inode) (ok bool) {
-	item := mp.inodeTree.Get(ino)
-	if item == nil {
+	key := InodeKey(ino.MarshalKey())
+	data, err := mp.GetTree().GetNoTxn(key, INODE)
+	if err != nil {
+		panic(err)
+	}
+	if data == nil {
 		ok = false
 		return
 	}
-	i := item.(*Inode)
+	i := NewInode(ino.Inode, ino.Type)
+	i.Unmarshal(data)
 	if i.ShouldDelete() {
 		ok = false
 		return
@@ -102,25 +163,28 @@ func (mp *metaPartition) hasInode(ino *Inode) (ok bool) {
 	return
 }
 
-func (mp *metaPartition) getInodeTree() *BTree {
-	return mp.inodeTree.GetTree()
-}
-
-// Ascend is the wrapper of inodeTree.Ascend
-func (mp *metaPartition) Ascend(f func(i BtreeItem) bool) {
-	mp.inodeTree.Ascend(f)
-}
-
 // fsmUnlinkInode delete the specified inode from inode tree.
 func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 	resp = NewInodeResponse()
 	resp.Status = proto.OpOk
-	item := mp.inodeTree.CopyGet(ino)
-	if item == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+
+	key := InodeKey(ino.MarshalKey())
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
 		resp.Status = proto.OpNotExistErr
 		return
 	}
-	inode := item.(*Inode)
+	inode := NewInode(ino.Inode, ino.Type)
+	if err = inode.Unmarshal(data); err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
 	if inode.ShouldDelete() {
 		resp.Status = proto.OpNotExistErr
 		return
@@ -129,7 +193,7 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 	resp.Msg = inode
 
 	if inode.IsEmptyDir() {
-		mp.inodeTree.Delete(inode)
+		tree.Delete(txn, key, INODE)
 	}
 
 	inode.DecNLink()
@@ -142,7 +206,12 @@ func (mp *metaPartition) fsmUnlinkInode(ino *Inode) (resp *InodeResponse) {
 				mp.freeList.Push(inode.Inode)
 			}
 		})
+		data, err = inode.Marshal()
+		// save orphan inode until evict
+		tree.Put(txn, key, data, INODE)
 	}
+
+	tree.TransactionCommit(txn)
 
 	return
 }
@@ -153,10 +222,6 @@ func (mp *metaPartition) fsmUnlinkInodeBatch(ib InodeBatch) (resp []*InodeRespon
 		resp = append(resp, mp.fsmUnlinkInode(ino))
 	}
 	return
-}
-
-func (mp *metaPartition) internalHasInode(ino *Inode) bool {
-	return mp.inodeTree.Has(ino)
 }
 
 func (mp *metaPartition) internalDelete(val []byte) (err error) {
@@ -199,43 +264,85 @@ func (mp *metaPartition) internalDeleteBatch(val []byte) error {
 }
 
 func (mp *metaPartition) internalDeleteInode(ino *Inode) {
-	mp.inodeTree.Delete(ino)
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	ikey := InodeKey(ino.MarshalKey())
+	tree.Delete(txn, ikey, INODE)
 	mp.freeList.Remove(ino.Inode)
-	mp.extendTree.Delete(&Extend{inode: ino.Inode}) // Also delete extend attribute.
+	//mp.extendTree.Delete(&Extend{inode: ino.Inode}) // Also delete extend attribute.
+	ekey := ExtendKey(ExtendToBytes())
+	tree.Delete(txn, ekey, EXTEND)
+
+	tree.TransactionCommit(txn)
 	return
 }
 
 func (mp *metaPartition) fsmAppendExtents(ino *Inode) (status uint8) {
 	status = proto.OpOk
-	item := mp.inodeTree.CopyGet(ino)
-	if item == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := InodeKey(ino.MarshalKey())
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
 		status = proto.OpNotExistErr
 		return
 	}
-	ino2 := item.(*Inode)
-	if ino2.ShouldDelete() {
+	i := NewInode(ino.Inode, ino.Type)
+	if err = i.Unmarshal(data); err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
+	if i.ShouldDelete() {
 		status = proto.OpNotExistErr
 		return
 	}
+
 	eks := ino.Extents.CopyExtents()
-	delExtents := ino2.AppendExtents(eks, ino.ModifyTime, mp.volType)
-	log.LogInfof("fsmAppendExtents inode(%v) deleteExtents(%v)", ino2.Inode, delExtents)
+	delExtents := i.AppendExtents(eks, ino.ModifyTime, mp.volType)
+
+	data, err = i.Marshal()
+	tree.Put(txn, key, data, INODE)
+	tree.TransactionCommit(txn)
+
+	log.LogInfof("fsmAppendExtents inode(%v) deleteExtents(%v)", i.Inode, delExtents)
 	mp.extDelCh <- delExtents
 	return
 }
 
 func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode) (status uint8) {
 	status = proto.OpOk
-	item := mp.inodeTree.CopyGet(ino)
-	if item == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := InodeKey(ino.MarshalKey())
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
 		status = proto.OpNotExistErr
 		return
 	}
-	ino2 := item.(*Inode)
+	ino2 := NewInode(ino.Inode, ino.Type)
+	if err = ino2.Unmarshal(data); err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
 	if ino2.ShouldDelete() {
 		status = proto.OpNotExistErr
 		return
 	}
+
 	var (
 		discardExtentKey []proto.ExtentKey
 	)
@@ -256,31 +363,57 @@ func (mp *metaPartition) fsmAppendExtentsWithCheck(ino *Inode) (status uint8) {
 		mp.extDelCh <- eks[:1]
 	}
 
+	if data, err = ino2.Marshal(); err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
+	if err = tree.Put(txn, key, data, INODE); err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
+	tree.TransactionCommit(txn)
+
 	log.LogInfof("fsmAppendExtentWithCheck inode(%v) ek(%v) deleteExtents(%v) discardExtents(%v) status(%v)", ino2.Inode, eks[0], delExtents, discardExtentKey, status)
 	return
 }
 
 func (mp *metaPartition) fsmAppendObjExtents(ino *Inode) (status uint8) {
 	status = proto.OpOk
-	item := mp.inodeTree.CopyGet(ino)
-	if item == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := InodeKey(ino.MarshalKey())
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
 		status = proto.OpNotExistErr
 		return
 	}
-
-	inode := item.(*Inode)
+	inode := NewInode(ino.Inode, ino.Type)
+	if err = inode.Unmarshal(data); err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
 	if inode.ShouldDelete() {
 		status = proto.OpNotExistErr
 		return
 	}
 
 	eks := ino.ObjExtents.CopyExtents()
-	err := inode.AppendObjExtents(eks, ino.ModifyTime)
+	err = inode.AppendObjExtents(eks, ino.ModifyTime)
 
 	// if err is not nil, means obj eks exist overlap.
 	if err != nil {
 		log.LogErrorf("fsmAppendExtents inode(%v) err(%v)", inode.Inode, err)
 		status = proto.OpConflictExtentsErr
+	} else {
+		data, err = inode.Marshal()
+		err = tree.Put(txn, key, data, INODE)
+		tree.TransactionCommit(txn)
 	}
 	return
 }
@@ -310,12 +443,26 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 	resp = NewInodeResponse()
 
 	resp.Status = proto.OpOk
-	item := mp.inodeTree.CopyGet(ino)
-	if item == nil {
+
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := InodeKey(ino.MarshalKey())
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
 		resp.Status = proto.OpNotExistErr
 		return
 	}
-	i := item.(*Inode)
+	i := NewInode(ino.Inode, ino.Type)
+	if err = i.Unmarshal(data); err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
 	if i.ShouldDelete() {
 		resp.Status = proto.OpNotExistErr
 		return
@@ -327,6 +474,10 @@ func (mp *metaPartition) fsmExtentsTruncate(ino *Inode) (resp *InodeResponse) {
 
 	delExtents := i.ExtentsTruncate(ino.Size, ino.ModifyTime)
 
+	data, err = i.Marshal()
+	err = tree.Put(txn, key, data, INODE)
+	tree.TransactionCommit(txn)
+
 	// now we should delete the extent
 	log.LogInfof("fsmExtentsTruncate inode(%v) exts(%v)", i.Inode, delExtents)
 	mp.extDelCh <- delExtents
@@ -337,26 +488,44 @@ func (mp *metaPartition) fsmEvictInode(ino *Inode) (resp *InodeResponse) {
 	resp = NewInodeResponse()
 
 	resp.Status = proto.OpOk
-	item := mp.inodeTree.CopyGet(ino)
-	if item == nil {
+
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := InodeKey(ino.MarshalKey())
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
 		resp.Status = proto.OpNotExistErr
 		return
 	}
-	i := item.(*Inode)
-	if i.ShouldDelete() {
+	i := NewInode(ino.Inode, ino.Type)
+	if err = i.Unmarshal(data); err != nil {
+		resp.Status = proto.OpIntraGroupNetErr
 		return
 	}
+	if i.ShouldDelete() {
+		resp.Status = proto.OpNotExistErr
+		return
+	}
+
 	if proto.IsDir(i.Type) {
 		if i.IsEmptyDir() {
 			i.SetDeleteMark()
 		}
-		return
-	}
-
-	if i.IsTempFile() {
+	} else if i.IsTempFile() {
 		i.SetDeleteMark()
 		mp.freeList.Push(i.Inode)
 	}
+
+	data, err = i.Marshal()
+	err = tree.Put(txn, key, data, INODE)
+	tree.TransactionCommit(txn)
+
 	return
 }
 
@@ -380,32 +549,62 @@ func (mp *metaPartition) checkAndInsertFreeList(ino *Inode) {
 }
 
 func (mp *metaPartition) fsmSetAttr(req *SetattrRequest) (err error) {
-	ino := NewInode(req.Inode, req.Mode)
-	item := mp.inodeTree.CopyGet(ino)
-	if item == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := InodeKey(InoToBytes(req.Inode))
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
 		return
 	}
-	ino = item.(*Inode)
+	if data == nil {
+		return
+	}
+	ino := NewInode(req.Inode, req.Mode)
+	if err = ino.Unmarshal(data); err != nil {
+		return
+	}
 	if ino.ShouldDelete() {
 		return
 	}
+
 	ino.SetAttr(req)
+
+	data, err = ino.Marshal()
+	err = tree.Put(txn, key, data, INODE)
+	tree.TransactionCommit(txn)
+
 	return
 }
 
 // fsmExtentsEmpty only use in datalake situation
 func (mp *metaPartition) fsmExtentsEmpty(ino *Inode) (status uint8) {
 	status = proto.OpOk
-	item := mp.inodeTree.CopyGet(ino)
-	if item == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := InodeKey(ino.MarshalKey())
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
 		status = proto.OpNotExistErr
 		return
 	}
-	i := item.(*Inode)
+	i := NewInode(ino.Inode, ino.Type)
+	if err = i.Unmarshal(data); err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
 	if i.ShouldDelete() {
 		status = proto.OpNotExistErr
 		return
 	}
+
 	if proto.IsDir(i.Type) {
 		status = proto.OpArgMismatchErr
 		return
@@ -420,23 +619,44 @@ func (mp *metaPartition) fsmExtentsEmpty(ino *Inode) (status uint8) {
 	}
 
 	i.EmptyExtents(ino.ModifyTime)
+	data, err = i.Marshal()
+	err = tree.Put(txn, key, data, INODE)
+	tree.TransactionCommit(txn)
 
 	return
 }
 
 func (mp *metaPartition) fsmClearInodeCache(ino *Inode) (status uint8) {
 	status = proto.OpOk
-	item := mp.inodeTree.Get(ino)
-	if item == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := InodeKey(ino.MarshalKey())
+	data, err := tree.Get(txn, key, INODE)
+	if err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
+	if data == nil {
 		status = proto.OpNotExistErr
 		return
 	}
-	ino2 := item.(*Inode)
+	ino2 := NewInode(ino.Inode, ino.Type)
+	if err = ino2.Unmarshal(data); err != nil {
+		status = proto.OpIntraGroupNetErr
+		return
+	}
 	if ino2.ShouldDelete() {
 		status = proto.OpNotExistErr
 		return
 	}
+
 	delExtents := ino2.EmptyExtents(ino.ModifyTime)
+	data, err = ino2.Marshal()
+	err = tree.Put(txn, key, data, INODE)
+	tree.TransactionCommit(txn)
+
 	log.LogInfof("fsmClearInodeCache inode(%v) delExtents(%v)", ino2.Inode, delExtents)
 	if len(delExtents) > 0 {
 		mp.extDelCh <- delExtents

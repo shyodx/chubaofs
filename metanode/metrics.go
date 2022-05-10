@@ -43,9 +43,9 @@ func (m *MetaNode) upatePartitionMetrics(mp *metaPartition) {
 	labels := map[string]string{
 		"partid": fmt.Sprintf("%d", mp.config.PartitionId),
 	}
-	it := mp.GetInodeTree()
-	if it != nil {
-		exporter.NewGauge("mpInodeCount").SetWithLabels(float64(it.Len()), labels)
+	tree := mp.GetTree()
+	if tree != nil {
+		exporter.NewGauge("mpInodeCount").SetWithLabels(float64(tree.Len(INODE)), labels)
 	}
 }
 

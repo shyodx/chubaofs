@@ -149,29 +149,34 @@ func DentryBatchUnmarshal(raw []byte) (DentryBatch, error) {
 	return result, nil
 }
 
-// Less tests whether the current dentry is less than the given one.
-// This method is necessary fot B-Tree item implementation.
-func (d *Dentry) Less(than BtreeItem) (less bool) {
-	dentry, ok := than.(*Dentry)
-	less = ok && ((d.ParentId < dentry.ParentId) || ((d.ParentId == dentry.ParentId) && (d.Name < dentry.Name)))
-	return
+func DentToBytes(pino uint64, name string) []byte {
+	buff := bytes.NewBuffer(make([]byte, 0))
+	buff.Grow(32)
+	if err := binary.Write(buff, binary.BigEndian, &pino); err != nil {
+		panic(err)
+	}
+	buff.Write([]byte(name))
+	return buff.Bytes()
 }
 
-func (d *Dentry) Copy() BtreeItem {
-	newDentry := *d
-	return &newDentry
+func BytesToDent(raw []byte) (uint64, string) {
+	var (
+		pino uint64
+		name string
+	)
+
+	buff := bytes.NewBuffer(raw)
+	if err := binary.Read(buff, binary.BigEndian, &pino); err != nil {
+		panic(err)
+	}
+	name = string(buff.Bytes())
+
+	return pino, name
 }
 
 // MarshalKey is the bytes version of the MarshalKey method which returns the byte slice result.
-func (d *Dentry) MarshalKey() (k []byte) {
-	buff := bytes.NewBuffer(make([]byte, 0))
-	buff.Grow(32)
-	if err := binary.Write(buff, binary.BigEndian, &d.ParentId); err != nil {
-		panic(err)
-	}
-	buff.Write([]byte(d.Name))
-	k = buff.Bytes()
-	return
+func (d *Dentry) MarshalKey() []byte {
+	return DentToBytes(d.ParentId, d.Name)
 }
 
 // UnmarshalKey unmarshals the exporterKey from bytes.
@@ -206,4 +211,23 @@ func (d *Dentry) UnmarshalValue(val []byte) (err error) {
 	}
 	err = binary.Read(buff, binary.BigEndian, &d.Type)
 	return
+}
+
+type DentryKey []byte
+
+func (dk DentryKey) Compare(than []byte) int {
+	return 0
+}
+
+func (dk DentryKey) Value() []byte {
+	return []byte(dk)
+}
+
+func (d *Dentry) ParseKVPair() (DentryKey, []byte) {
+	key := DentryKey(d.MarshalKey())
+	val, err := d.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	return key, val
 }

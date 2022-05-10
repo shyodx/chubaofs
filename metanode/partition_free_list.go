@@ -146,7 +146,14 @@ func (mp *metaPartition) deleteWorker() {
 			}
 
 			//check inode nlink == 0 and deletMarkFlag unset
-			if inode, ok := mp.inodeTree.CopyGet(&Inode{Inode: ino}).(*Inode); ok {
+			key := InodeKey(InoToBytes(ino))
+			if raw, err := mp.tree.GetNoTxn(key, INODE); err == nil {
+				inode := &Inode{}
+				if err = inode.Unmarshal(raw); err != nil {
+					log.LogErrorf("[metaPartition] deleteWorker unmarshal ino[%v]: %v", ino, err)
+					delayDeleteInos = append(delayDeleteInos, ino)
+					continue
+				}
 				if inode.ShouldDelayDelete() {
 					log.LogDebugf("[metaPartition] deleteWorker delay to remove inode: %v as NLink is 0", inode)
 					delayDeleteInos = append(delayDeleteInos, ino)
@@ -232,12 +239,17 @@ func (mp *metaPartition) deleteMarkedInodes(inoSlice []uint64) {
 	deleteExtentsByPartition := make(map[uint64][]*proto.ExtentKey)
 	allInodes := make([]*Inode, 0)
 	for _, ino := range inoSlice {
-		ref := &Inode{Inode: ino}
-		inode, ok := mp.inodeTree.CopyGet(ref).(*Inode)
-		if !ok {
+		key := InodeKey(InoToBytes(ino))
+		raw, err := mp.tree.GetNoTxn(key, INODE)
+		if err != nil {
 			continue
 		}
 
+		inode := &Inode{}
+		err = inode.Unmarshal(raw)
+		if err != nil {
+			continue
+		}
 		inode.Extents.Range(func(ek proto.ExtentKey) bool {
 			ext := &ek
 			exts, ok := deleteExtentsByPartition[ext.PartitionId]
@@ -284,7 +296,7 @@ func (mp *metaPartition) deleteMarkedInodes(inoSlice []uint64) {
 		}
 	}
 
-	log.LogInfof("metaPartition(%v) deleteInodeCnt(%v) inodeCnt(%v)", mp.config.PartitionId, len(shouldCommit), mp.inodeTree.Len())
+	log.LogInfof("metaPartition(%v) deleteInodeCnt(%v) inodeCnt(%v)", mp.config.PartitionId, len(shouldCommit), mp.GetTree().Len(INODE))
 	for _, inode := range shouldRePushToFreeList {
 		mp.freeList.Push(inode.Inode)
 	}

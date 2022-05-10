@@ -123,37 +123,6 @@ func NewInode(ino uint64, t uint32) *Inode {
 	return i
 }
 
-// Less tests whether the current Inode item is less than the given one.
-// This method is necessary fot B-Tree item implementation.
-func (i *Inode) Less(than BtreeItem) bool {
-	ino, ok := than.(*Inode)
-	return ok && i.Inode < ino.Inode
-}
-
-// Copy returns a copy of the inode.
-func (i *Inode) Copy() BtreeItem {
-	newIno := NewInode(i.Inode, i.Type)
-	i.RLock()
-	newIno.Uid = i.Uid
-	newIno.Gid = i.Gid
-	newIno.Size = i.Size
-	newIno.Generation = i.Generation
-	newIno.CreateTime = i.CreateTime
-	newIno.ModifyTime = i.ModifyTime
-	newIno.AccessTime = i.AccessTime
-	if size := len(i.LinkTarget); size > 0 {
-		newIno.LinkTarget = make([]byte, size)
-		copy(newIno.LinkTarget, i.LinkTarget)
-	}
-	newIno.NLink = i.NLink
-	newIno.Flag = i.Flag
-	newIno.Reserved = i.Reserved
-	newIno.Extents = i.Extents.Clone()
-	newIno.ObjExtents = i.ObjExtents.Clone()
-	i.RUnlock()
-	return newIno
-}
-
 // MarshalToJSON is the wrapper of json.Marshal.
 func (i *Inode) MarshalToJSON() ([]byte, error) {
 	i.RLock()
@@ -262,16 +231,25 @@ func InodeBatchUnmarshal(raw []byte) (InodeBatch, error) {
 	return result, nil
 }
 
+func InoToBytes(ino uint64) []byte {
+	raw := make([]byte, 8)
+	binary.BigEndian.PutUint64(raw, ino)
+	return raw
+}
+
+func BytesToIno(raw []byte) uint64 {
+	ino := binary.BigEndian.Uint64(raw)
+	return ino
+}
+
 // MarshalKey marshals the exporterKey to bytes.
 func (i *Inode) MarshalKey() (k []byte) {
-	k = make([]byte, 8)
-	binary.BigEndian.PutUint64(k, i.Inode)
-	return
+	return InoToBytes(i.Inode)
 }
 
 // UnmarshalKey unmarshals the exporterKey from bytes.
 func (i *Inode) UnmarshalKey(k []byte) (err error) {
-	i.Inode = binary.BigEndian.Uint64(k)
+	i.Inode = BytesToIno(k)
 	return
 }
 
@@ -687,3 +665,31 @@ func (i *Inode) CopyTinyExtents() (delExtents []proto.ExtentKey) {
 // 	i.Extents.eks = curEks
 // 	return
 // }
+
+type InodeKey []byte
+
+func (ik InodeKey) Compare(than []byte) int {
+	key1 := BytesToIno(ik)
+	key2 := BytesToIno(than)
+
+	if key1 > key2 {
+		return 1
+	} else if key1 == key2 {
+		return 0
+	} else {
+		return -1
+	}
+}
+
+func (ik InodeKey) Value() []byte {
+	return []byte(ik)
+}
+
+func (i *Inode) ParseKVPair() (InodeKey, []byte) {
+	key := InodeKey(InoToBytes(i.Inode))
+	val, err := i.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	return key, val
+}

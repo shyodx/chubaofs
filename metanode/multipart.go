@@ -20,8 +20,6 @@ import (
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/cubefs/cubefs/util/btree"
 )
 
 // Part defined necessary fields for multipart part management.
@@ -305,21 +303,6 @@ type Multipart struct {
 	mu sync.RWMutex
 }
 
-func (m *Multipart) Less(than btree.Item) bool {
-	tm, is := than.(*Multipart)
-	return is && ((m.key < tm.key) || ((m.key == tm.key) && (m.id < tm.id)))
-}
-
-func (m *Multipart) Copy() btree.Item {
-	return &Multipart{
-		id:       m.id,
-		key:      m.key,
-		initTime: m.initTime,
-		parts:    append(Parts{}, m.parts...),
-		extend:   m.extend,
-	}
-}
-
 func (m *Multipart) ID() string {
 	return m.id
 }
@@ -447,4 +430,18 @@ func MultipartFromBytes(raw []byte) *Multipart {
 		extend:   me,
 	}
 	return muSession
+}
+
+func MultipartToBytes() []byte {
+	return make([]byte, 0)
+}
+
+type MultipartKey []byte
+
+func (mk MultipartKey) Compare(than []byte) int {
+	return 0
+}
+
+func (mk MultipartKey) Value() []byte {
+	return []byte(mk)
 }

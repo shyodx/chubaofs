@@ -123,7 +123,6 @@ type OpInode interface {
 	EvictInode(req *EvictInodeReq, p *Packet) (err error)
 	EvictInodeBatch(req *BatchEvictInodeReq, p *Packet) (err error)
 	SetAttr(reqData []byte, p *Packet) (err error)
-	GetInodeTree() *BTree
 	DeleteInode(req *proto.DeleteInodeRequest, p *Packet) (err error)
 	DeleteInodeBatch(req *proto.DeleteInodeBatchRequest, p *Packet) (err error)
 	ClearInodeCache(req *proto.ClearInodeCacheRequest, p *Packet) (err error)
@@ -148,7 +147,6 @@ type OpDentry interface {
 	ReadDirLimit(req *ReadDirLimitReq, p *Packet) (err error)
 	ReadDirOnly(req *ReadDirOnlyReq, p *Packet) (err error)
 	Lookup(req *LookupReq, p *Packet) (err error)
-	GetDentryTree() *BTree
 }
 
 // OpExtent defines the interface for the extent operations.
@@ -207,6 +205,7 @@ type MetaPartition interface {
 	LoadSnapshot(path string) error
 	ForceSetMetaPartitionToLoadding()
 	ForceSetMetaPartitionToFininshLoad()
+	GetTree() *BTree
 }
 
 // metaPartition manages the range of the inode IDs.
@@ -219,10 +218,7 @@ type metaPartition struct {
 	config                 *MetaPartitionConfig
 	size                   uint64 // For partition all file size
 	applyID                uint64 // Inode/Dentry max applyID, this index will be update after restoring from the dumped data.
-	dentryTree             *BTree
-	inodeTree              *BTree // btree for inodes
-	extendTree             *BTree // btree for inode extend (XAttr) management
-	multipartTree          *BTree // collection for multipart management
+	tree                   *BTree // btree for meta data: inode, dentry, extend, multipart
 	raftPartition          raftstore.Partition
 	stopC                  chan bool
 	storeChan              chan *storeMsg
@@ -248,11 +244,20 @@ func (mp *metaPartition) updateSize() {
 			case <-timer.C:
 				size := uint64(0)
 
-				mp.inodeTree.GetTree().Ascend(func(item BtreeItem) bool {
-					inode := item.(*Inode)
+				// we don't need a very precise list of inodes
+				tree := mp.GetTree()
+				txn, _ := tree.TransactionBegin(TxnDefault)
+				tree.Traverse(txn, nil, INODE, func(data []byte) bool {
+					inode := &Inode{}
+					if err := inode.Unmarshal(data); err != nil {
+						log.LogErrorf("[updateSize] update mp(%d) inode unmarshal: %v", mp.config.PartitionId, err)
+						// still return true to continue scaning all other inodes
+						return true
+					}
 					size += inode.Size
 					return true
 				})
+				tree.TransactionEnd(txn, nil)
 
 				mp.size = size
 				log.LogDebugf("[updateSize] update mp(%d) size(%d) success", mp.config.PartitionId, size)
@@ -472,23 +477,38 @@ func (mp *metaPartition) getRaftPort() (heartbeat, replica int, err error) {
 	return
 }
 
+const (
+	DEFAULT int = iota
+	INODE
+	DENTRY
+	EXTEND
+	MULTIPART
+)
+
+var CFNames = []string{"default", "inode", "dentry", "extend", "multipart"}
+
 // NewMetaPartition creates a new meta partition with the specified configuration.
-func NewMetaPartition(conf *MetaPartitionConfig, manager *metadataManager) MetaPartition {
+func NewMetaPartition(conf *MetaPartitionConfig, manager *metadataManager) (MetaPartition, error) {
+	var err error
+
 	mp := &metaPartition{
-		config:        conf,
-		dentryTree:    NewBtree(),
-		inodeTree:     NewBtree(),
-		extendTree:    NewBtree(),
-		multipartTree: NewBtree(),
-		stopC:         make(chan bool),
-		storeChan:     make(chan *storeMsg, 100),
-		freeList:      newFreeList(),
-		extDelCh:      make(chan []proto.ExtentKey, defaultDelExtentsCnt),
-		extReset:      make(chan struct{}),
-		vol:           NewVol(),
-		manager:       manager,
+		config:    conf,
+		stopC:     make(chan bool),
+		storeChan: make(chan *storeMsg, 100),
+		freeList:  newFreeList(),
+		extDelCh:  make(chan []proto.ExtentKey, defaultDelExtentsCnt),
+		extReset:  make(chan struct{}),
+		vol:       NewVol(),
+		manager:   manager,
 	}
-	return mp
+
+	mp.tree, err = NewBTree(path.Join(conf.RootDir, metaDBDir), CFNames)
+	if err != nil {
+		log.LogErrorf("Failed to create Btree: %v", err)
+		return nil, err
+	}
+
+	return mp, nil
 }
 
 // IsLeader returns the raft leader address and if the current meta partition is the leader.
@@ -726,8 +746,8 @@ func (mp *metaPartition) ResponseLoadMetaPartition(p *Packet) (err error) {
 		DoCompare:   true,
 	}
 	resp.MaxInode = mp.GetCursor()
-	resp.InodeCount = uint64(mp.getInodeTree().Len())
-	resp.DentryCount = uint64(mp.getDentryTree().Len())
+	resp.InodeCount = uint64(mp.GetTree().Len(INODE))
+	resp.DentryCount = uint64(mp.GetTree().Len(DENTRY))
 	resp.ApplyID = mp.applyID
 	if err != nil {
 		err = errors.Trace(err,
@@ -752,8 +772,7 @@ func (mp *metaPartition) MarshalJSON() ([]byte, error) {
 // TODO remove? no usage?
 // Reset resets the meta partition.
 func (mp *metaPartition) Reset() (err error) {
-	mp.inodeTree.Reset()
-	mp.dentryTree.Reset()
+	mp.GetTree().Reset()
 	mp.config.Cursor = 0
 	mp.applyID = 0
 
@@ -851,16 +870,20 @@ func (mp *metaPartition) InodeTTLScan(cacheTTL int) {
 	// begin
 	count := 0
 	needSleep := false
-	mp.inodeTree.GetTree().Ascend(func(i BtreeItem) bool {
-		inode := i.(*Inode)
+	tree := mp.GetTree()
+	txn, snap := tree.TransactionBegin(TxnSnapshot)
+	tree.Traverse(txn, snap, INODE, func(data []byte) bool {
+		inode := &Inode{}
+		if err := inode.Unmarshal(data); err != nil {
+			log.LogErrorf("[InodeTLLScan mp[%v] unmarshal: %v", mp.config.PartitionId, err)
+			return true
+		}
 		// dir type just skip
 		if proto.IsDir(inode.Type) {
 			return true
 		}
-		inode.RLock()
 		// eks is empty just skip
 		if len(inode.Extents.eks) == 0 || inode.ShouldDelete() {
-			inode.RUnlock()
 			return true
 		}
 
@@ -886,7 +909,6 @@ func (mp *metaPartition) InodeTTLScan(cacheTTL int) {
 				needSleep = true
 			}
 		}
-		inode.RUnlock()
 		// every 1000 inode sleep 1s
 		if count > 1000 || needSleep {
 			count %= 1000
@@ -895,4 +917,10 @@ func (mp *metaPartition) InodeTTLScan(cacheTTL int) {
 		}
 		return true
 	})
+	tree.TransactionCommit(txn)
+	tree.TransactionEnd(txn, snap)
+}
+
+func (mp *metaPartition) GetTree() *BTree {
+	return mp.tree
 }

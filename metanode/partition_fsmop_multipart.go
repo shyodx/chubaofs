@@ -17,35 +17,68 @@ package metanode
 import "github.com/cubefs/cubefs/proto"
 
 func (mp *metaPartition) fsmCreateMultipart(multipart *Multipart) (status uint8) {
-	_, ok := mp.multipartTree.ReplaceOrInsert(multipart, false)
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := MultipartKey(MultipartToBytes())
+	val, err := multipart.Bytes()
+	if err != nil {
+		return proto.OpIntraGroupNetErr
+	}
+	_, ok := tree.ReplaceOrInsert(txn, key, val, MULTIPART, false)
 	if !ok {
 		return proto.OpExistErr
 	}
+
+	tree.TransactionCommit(txn)
 	return proto.OpOk
 }
 
 func (mp *metaPartition) fsmRemoveMultipart(multipart *Multipart) (status uint8) {
-	deletedItem := mp.multipartTree.Delete(multipart)
-	if deletedItem == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := MultipartKey(MultipartToBytes())
+	val := tree.Delete(txn, key, MULTIPART)
+	if val == nil {
 		return proto.OpNotExistErr
 	}
+
+	tree.TransactionCommit(txn)
 	return proto.OpOk
 }
 
 func (mp *metaPartition) fsmAppendMultipart(multipart *Multipart) (status uint8) {
-	storedItem := mp.multipartTree.CopyGet(multipart)
-	if storedItem == nil {
+	tree := mp.GetTree()
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer tree.TransactionEnd(txn, nil)
+
+	key := MultipartKey(MultipartToBytes())
+	val, err := tree.Get(txn, key, MULTIPART)
+	if err != nil {
+		return proto.OpIntraGroupNetErr
+	}
+	if val == nil {
 		return proto.OpNotExistErr
 	}
-	storedMultipart, is := storedItem.(*Multipart)
-	if !is {
-		return proto.OpNotExistErr
-	}
+
+	storedMultipart := MultipartFromBytes(val)
 	for _, part := range multipart.Parts() {
 		actual, stored := storedMultipart.LoadOrStorePart(part)
 		if !stored && !actual.Equal(part) {
 			return proto.OpExistErr
 		}
 	}
+
+	if val, err = storedMultipart.Bytes(); err != nil {
+		return proto.OpIntraGroupNetErr
+	}
+	if err = tree.Put(txn, key, val, MULTIPART); err != nil {
+		return proto.OpIntraGroupNetErr
+	}
+
+	tree.TransactionCommit(txn)
 	return proto.OpOk
 }

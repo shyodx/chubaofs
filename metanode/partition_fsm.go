@@ -170,17 +170,11 @@ func (mp *metaPartition) Apply(command []byte, index uint64) (resp interface{}, 
 		resp = mp.fsmSendToChan(msg.V)
 
 	case opFSMStoreTick:
-		inodeTree := mp.getInodeTree()
-		dentryTree := mp.getDentryTree()
-		extendTree := mp.extendTree.GetTree()
-		multipartTree := mp.multipartTree.GetTree()
+		btreeSnap := mp.tree.NewSnapshotIterators()
 		msg := &storeMsg{
-			command:       opFSMStoreTick,
-			applyIndex:    index,
-			inodeTree:     inodeTree,
-			dentryTree:    dentryTree,
-			extendTree:    extendTree,
-			multipartTree: multipartTree,
+			command:    opFSMStoreTick,
+			applyIndex: index,
+			btreeSnap:  btreeSnap,
 		}
 		mp.storeChan <- msg
 	case opFSMInternalDeleteInode:
@@ -281,32 +275,29 @@ func (mp *metaPartition) Snapshot() (snap raftproto.Snapshot, err error) {
 // ApplySnapshot applies the given snapshots.
 func (mp *metaPartition) ApplySnapshot(peers []raftproto.Peer, iter raftproto.SnapIterator) (err error) {
 	var (
-		data          []byte
-		index         int
-		appIndexID    uint64
-		cursor        uint64
-		inodeTree     = NewBtree()
-		dentryTree    = NewBtree()
-		extendTree    = NewBtree()
-		multipartTree = NewBtree()
+		data       []byte
+		index      int
+		appIndexID uint64
+		cursor     uint64
 	)
+
+	tree, err := NewBTree(path.Join(mp.config.RootDir, metaDBDir), CFNames)
+	if err != nil {
+		log.LogErrorf("Failed to create BTree: %v", err)
+		return err
+	}
+
 	defer func() {
 		if err == io.EOF {
 			mp.applyID = appIndexID
-			mp.inodeTree = inodeTree
-			mp.dentryTree = dentryTree
-			mp.extendTree = extendTree
-			mp.multipartTree = multipartTree
+			mp.tree = tree
 			mp.config.Cursor = cursor
 			err = nil
 			// store message
 			mp.storeChan <- &storeMsg{
-				command:       opFSMStoreTick,
-				applyIndex:    mp.applyID,
-				inodeTree:     mp.inodeTree,
-				dentryTree:    mp.dentryTree,
-				extendTree:    mp.extendTree,
-				multipartTree: mp.multipartTree,
+				command:    opFSMStoreTick,
+				applyIndex: mp.applyID,
+				btreeSnap:  mp.tree.NewSnapshotIterators(),
 			}
 			select {
 			case mp.extReset <- struct{}{}:
@@ -319,6 +310,13 @@ func (mp *metaPartition) ApplySnapshot(peers []raftproto.Peer, iter raftproto.Sn
 		}
 		log.LogErrorf("ApplySnapshot: stop with error: partitionID(%v) err(%v)", mp.config.PartitionId, err)
 	}()
+
+	txn, _ := tree.TransactionBegin(TxnDefault)
+	defer func() {
+		err = tree.TransactionCommit(txn)
+		tree.TransactionEnd(txn, nil)
+	}()
+
 	for {
 		data, err = iter.Next()
 		if err != nil {
@@ -336,38 +334,53 @@ func (mp *metaPartition) ApplySnapshot(peers []raftproto.Peer, iter raftproto.Sn
 		index++
 		switch snap.Op {
 		case opFSMCreateInode:
-			ino := NewInode(0, 0)
+			ino := &Inode{}
 
 			// TODO Unhandled errors
 			ino.UnmarshalKey(snap.K)
-			ino.UnmarshalValue(snap.V)
 			if cursor < ino.Inode {
 				cursor = ino.Inode
 			}
-			inodeTree.ReplaceOrInsert(ino, true)
+			key := InodeKey(snap.K)
+			val := snap.V
+			if err = tree.Put(txn, key, val, INODE); err != nil {
+				log.LogErrorf("ApplySnapshot: create inode: partitionID(%v) ino(%v): %v",
+					mp.config.PartitionId, ino.Inode, err)
+				return
+			}
 			log.LogDebugf("ApplySnapshot: create inode: partitonID(%v) inode(%v).", mp.config.PartitionId, ino)
 		case opFSMCreateDentry:
 			dentry := &Dentry{}
 			if err = dentry.UnmarshalKey(snap.K); err != nil {
 				return
 			}
-			if err = dentry.UnmarshalValue(snap.V); err != nil {
+			key := DentryKey(snap.K)
+			val := snap.V
+			if err = tree.Put(txn, key, val, DENTRY); err != nil {
+				log.LogErrorf("ApplySnapshot: create dentry: partitionID(%v) dentry(%v): %v",
+					mp.config.PartitionId, dentry.Name, err)
 				return
 			}
-			dentryTree.ReplaceOrInsert(dentry, true)
 			log.LogDebugf("ApplySnapshot: create dentry: partitionID(%v) dentry(%v)", mp.config.PartitionId, dentry)
 		case opFSMSetXAttr:
-			var extend *Extend
-			if extend, err = NewExtendFromBytes(snap.V); err != nil {
+			key := ExtendKey(snap.K) // FIXME: what is the correct key
+			val := snap.V
+			if err = tree.Put(txn, key, val, EXTEND); err != nil {
+				log.LogErrorf("ApplySnapshot: create extend: partitionID(%v): %v",
+					mp.config.PartitionId, err)
 				return
 			}
-			extendTree.ReplaceOrInsert(extend, true)
-			log.LogDebugf("ApplySnapshot: set extend attributes: partitionID(%v) extend(%v)",
-				mp.config.PartitionId, extend)
+			log.LogDebugf("ApplySnapshot: set extend attributes: partitionID(%v)",
+				mp.config.PartitionId)
 		case opFSMCreateMultipart:
-			var multipart = MultipartFromBytes(snap.V)
-			multipartTree.ReplaceOrInsert(multipart, true)
-			log.LogDebugf("ApplySnapshot: create multipart: partitionID(%v) multipart(%v)", mp.config.PartitionId, multipart)
+			key := MultipartKey(snap.K) // FIXME: what is the correct key
+			val := snap.V
+			if err = tree.Put(txn, key, val, MULTIPART); err != nil {
+				log.LogErrorf("ApplySnapshot: create multipart: partitionID(%v): %v",
+					mp.config.PartitionId, err)
+				return
+			}
+			log.LogDebugf("ApplySnapshot: create multipart: partitionID(%v)", mp.config.PartitionId)
 		case opExtentFileSnapshot:
 			fileName := string(snap.K)
 			fileName = path.Join(mp.config.RootDir, fileName)

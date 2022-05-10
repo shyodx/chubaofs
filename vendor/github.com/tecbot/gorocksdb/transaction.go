@@ -101,8 +101,77 @@ func (transaction *Transaction) NewIterator(opts *ReadOptions) *Iterator {
 		unsafe.Pointer(C.rocksdb_transaction_create_iterator(transaction.c, opts.c)))
 }
 
+func (transaction *Transaction) NewIteratorCF(opts *ReadOptions, cf *ColumnFamilyHandle) *Iterator {
+	return NewNativeIterator(
+		unsafe.Pointer(C.rocksdb_transaction_create_iterator_cf(transaction.c, opts.c, cf.c)))
+}
+
 // Destroy deallocates the transaction object.
 func (transaction *Transaction) Destroy() {
 	C.rocksdb_transaction_destroy(transaction.c)
 	transaction.c = nil
+}
+
+// GetCF returns the data associated with the key from the column family given this transaction.
+func (transaction *Transaction) GetCF(
+	opts *ReadOptions,
+	cf *ColumnFamilyHandle,
+	key []byte,
+) (*Slice, error) {
+	var (
+		cErr    *C.char
+		cValLen C.size_t
+		cKey    = byteToChar(key)
+	)
+
+	cValue := C.rocksdb_transaction_get_cf(
+		transaction.c, opts.c, cf.c, cKey, C.size_t(len(key)), &cValLen, &cErr,
+	)
+	if cErr != nil {
+		defer C.free(unsafe.Pointer(cErr))
+		return nil, errors.New(C.GoString(cErr))
+	}
+	return NewSlice(cValue, cValLen), nil
+}
+
+// PutCF writes data associated with a key to the transaction.
+func (transaction *Transaction) PutCF(cf *ColumnFamilyHandle, key, value []byte) error {
+	var (
+		cErr   *C.char
+		cKey   = byteToChar(key)
+		cValue = byteToChar(value)
+	)
+
+	C.rocksdb_transaction_put_cf(
+		transaction.c, cf.c, cKey, C.size_t(len(key)), cValue, C.size_t(len(value)), &cErr,
+	)
+	if cErr != nil {
+		defer C.free(unsafe.Pointer(cErr))
+		return errors.New(C.GoString(cErr))
+	}
+	return nil
+}
+
+// DeleteCF removes the data associated with the key from the transaction.
+func (transaction *Transaction) DeleteCF(cf *ColumnFamilyHandle, key []byte) error {
+	var (
+		cErr *C.char
+		cKey = byteToChar(key)
+	)
+	C.rocksdb_transaction_delete_cf(transaction.c, cf.c, cKey, C.size_t(len(key)), &cErr)
+	if cErr != nil {
+		defer C.free(unsafe.Pointer(cErr))
+		return errors.New(C.GoString(cErr))
+	}
+	return nil
+}
+
+func (transaction *Transaction) GetSnapshot() *Snapshot {
+	snap := NewNativeSnapshot(C.rocksdb_transaction_get_snapshot(transaction.c))
+	return snap
+}
+
+func (transaction *Transaction) ReleaseSnapshot(snap *Snapshot) {
+	C.rocksdb_free(unsafe.Pointer(snap.c))
+	snap.c = nil
 }
